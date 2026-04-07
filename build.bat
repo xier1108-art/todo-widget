@@ -21,12 +21,16 @@ if errorlevel 1 (
 )
 
 echo.
+echo [아이콘 생성] icon.ico 생성 중...
+python -c "from todo_widget import save_app_icon; save_app_icon()"
+
+echo.
 echo [빌드 중] 할일위젯.exe 생성 중...
 pyinstaller ^
     --onefile ^
     --noconsole ^
+    --icon=icon.ico ^
     --name "할일위젯" ^
-    --add-data "todos.json;." 2>nul ^
     todo_widget.py
 
 if errorlevel 1 (

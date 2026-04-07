@@ -2,6 +2,7 @@
 build/
 dist/
 *.spec
+icon.ico
 
 # 데이터 파일 (개인 할일은 올리지 않음)
 todos.json
