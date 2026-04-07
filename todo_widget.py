@@ -26,8 +26,8 @@ except ImportError:
 
 APP_NAME = "할일위젯"
 REG_KEY  = "TodoWidget"
-FONT     = "Segoe UI"      # Windows 11 시스템 폰트 (한글은 맑은고딕 폴백)
-CARD_R   = 10              # 카드 모서리 반경 (px)
+FONT     = "맑은 고딕"     # 한글 기본 모던 폰트 (Windows 7+, SIL OFL-free)
+CARD_R   = 16              # 카드 모서리 반경 (px)
 
 def _data_path():
     base = (os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)
@@ -260,8 +260,9 @@ class TodoWidget:
         self._rsx = self._rsy = self._rsw = self._rsh = 0
         self._drag_td = self._drag_orig_y = self._drag_orig_idx = None
         self._drag_rows:   list = []
-        self._text_labels: list = []
-        self._card_cvs:    list = []   # Canvas refs for rounded cards
+        self._text_labels:  list = []
+        self._card_cvs:     list = []   # Canvas refs for rounded cards
+        self._card_redraws: list = []   # immediate redraw callbacks (flash 방지)
 
         self.root = tk.Tk()
         self.root.title(APP_NAME)
@@ -435,13 +436,10 @@ class TodoWidget:
 
     def _on_canvas_configure(self, e):
         self.canvas.itemconfig(self._sf_id, width=e.width)
-        # 카드 Canvas 너비 업데이트
-        for cv, win_id in self._card_cvs:
-            try:
-                cw = e.width - 16   # padx=8 양쪽
-                cv.itemconfig(win_id, width=cw - 8)
-            except Exception:
-                pass
+        # 카드 Canvas 너비 + rounded rect 재렌더
+        for fn in self._card_redraws:
+            try: fn()
+            except Exception: pass
         # wraplength 디바운스
         if hasattr(self, '_wl_job'):
             try: self.root.after_cancel(self._wl_job)
@@ -539,6 +537,7 @@ class TodoWidget:
         self._drag_rows.clear()
         self._text_labels.clear()
         self._card_cvs.clear()
+        self._card_redraws.clear()
 
         if not self.todos:
             tk.Label(self.sf, text="할 일을 추가해보세요",
@@ -561,23 +560,33 @@ class TodoWidget:
             self.badge_lbl.pack_forget()
 
         self.sf.update_idletasks()
+        # 모든 카드를 즉시 재렌더 (flash 방지)
+        for fn in self._card_redraws:
+            fn()
 
     def _render_item(self, td):
         t    = self.t
         done = td["done"]
         PAD  = 4
 
+        # 부모 캔버스 너비를 미리 계산 → height=1 지연 없이 즉시 렌더
+        parent_w = self.canvas.winfo_width()
+        if parent_w <= 1:
+            parent_w = self.data["window"]["width"]
+        card_w = max(100, parent_w - 16)   # padx=8 양쪽
+
         # ── 카드 Canvas (둥근 모서리) ──────────
         cv = tk.Canvas(self.sf, bg=t["bg"], highlightthickness=0,
-                       bd=0, height=1)
-        cv.pack(fill="x", padx=8, pady=3)
+                       bd=0, height=52, width=card_w)
+        cv.pack(fill="x", padx=8, pady=4)
 
-        row = tk.Frame(cv, bg=t["card"], pady=8)
-        win_id = cv.create_window(PAD, PAD, window=row, anchor="nw")
+        row = tk.Frame(cv, bg=t["card"], pady=10)
+        win_id = cv.create_window(PAD, PAD, window=row, anchor="nw",
+                                  width=card_w - PAD * 2)
 
         def _redraw(e=None):
             cw = cv.winfo_width()
-            if cw <= 1: cv.after(30, _redraw); return
+            if cw <= 1: cw = card_w          # 미리 계산한 너비로 폴백
             row.update_idletasks()
             ch = row.winfo_reqheight()
             if ch <= 1: cv.after(30, _redraw); return
@@ -592,6 +601,7 @@ class TodoWidget:
         cv.bind("<MouseWheel>", self._scroll)
 
         self._card_cvs.append((cv, win_id))
+        self._card_redraws.append(_redraw)
 
         # ── 드래그 핸들 ───────────────────────
         dh = tk.Label(row, text="⠿", bg=t["card"], fg=t["muted"],
@@ -888,9 +898,10 @@ class TodoWidget:
 # ──────────────────────────────────────────────
 class ListWindow:
     def __init__(self, app: TodoWidget):
-        self.app         = app
-        self.filter_mode = "all"
-        self.search_var  = tk.StringVar()
+        self.app            = app
+        self.filter_mode    = "all"
+        self.search_var     = tk.StringVar()
+        self._list_redraws: list = []
         self.search_var.trace("w", lambda *a: self.refresh())
 
         t = app.t
@@ -995,6 +1006,7 @@ class ListWindow:
     def refresh(self):
         t = self.app.t
         for w in self.sf.winfo_children(): w.destroy()
+        self._list_redraws.clear()
 
         kw    = self.search_var.get().strip().lower()
         today = date.today().isoformat()
@@ -1016,25 +1028,37 @@ class ListWindow:
         done  = sum(1 for td in self.app.todos if td["done"])
         self.stat_lbl.config(
             text=f"총 {total}개  ·  미완료 {total-done}개  ·  완료 {done}개")
+        self.sf.update_idletasks()
+        for fn in self._list_redraws:
+            fn()
 
     def _row(self, td, today):
         t    = self.app.t
         done = td["done"]
+        PAD  = 4
 
-        cv = tk.Canvas(self.sf, bg=t["bg"], highlightthickness=0, bd=0, height=1)
-        cv.pack(fill="x", padx=10, pady=3)
-        row = tk.Frame(cv, bg=t["card"], pady=8)
-        win_id = cv.create_window(4, 4, window=row, anchor="nw")
+        # 부모 캔버스 너비 미리 계산
+        parent_w = self.canvas.winfo_width()
+        if parent_w <= 1:
+            parent_w = 460
+        card_w = max(100, parent_w - 20)   # padx=10 양쪽
+
+        cv = tk.Canvas(self.sf, bg=t["bg"], highlightthickness=0,
+                       bd=0, height=52, width=card_w)
+        cv.pack(fill="x", padx=10, pady=4)
+        row = tk.Frame(cv, bg=t["card"], pady=10)
+        win_id = cv.create_window(PAD, PAD, window=row, anchor="nw",
+                                  width=card_w - PAD * 2)
 
         def _redraw(e=None):
             cw = cv.winfo_width()
-            if cw <= 1: cv.after(30, _redraw); return
+            if cw <= 1: cw = card_w
             row.update_idletasks()
             ch = row.winfo_reqheight()
             if ch <= 1: cv.after(30, _redraw); return
-            th = ch + 8
+            th = ch + PAD * 2
             cv.config(height=th)
-            cv.itemconfig(win_id, width=cw - 8)
+            cv.itemconfig(win_id, width=cw - PAD * 2)
             _draw_rounded(cv, 0, 0, cw, th, CARD_R, t["card"], t["border"])
             cv.tag_lower("card")
 
@@ -1082,6 +1106,7 @@ class ListWindow:
 
         for w in [row, cv] + list(row.winfo_children()):
             w.bind("<MouseWheel>", scb)
+        self._list_redraws.append(_redraw)
 
     def _inline_edit(self, td, row):
         for w in row.winfo_children(): w.destroy()
