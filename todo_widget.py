@@ -255,8 +255,18 @@ class TodoWidget:
         mid = tk.Frame(self.root, bg=t["bg"])
         mid.pack(fill="both", expand=True)
 
-        self.vsb = tk.Scrollbar(mid, orient="vertical", width=12)
-        self.vsb.pack(side="right", fill="y")
+        # 우측 패널: 스크롤바(12px) + 우측 리사이즈 핸들(4px)
+        right_pane = tk.Frame(mid, bg=t["header"])
+        right_pane.pack(side="right", fill="y")
+
+        self.vsb = tk.Scrollbar(right_pane, orient="vertical", width=12)
+        self.vsb.pack(side="left", fill="y")
+
+        r_edge = tk.Frame(right_pane, bg=t["header"], width=4, cursor="size_we")
+        r_edge.pack(side="right", fill="y")
+        r_edge.bind("<ButtonPress-1>",   self._rs_start)
+        r_edge.bind("<B1-Motion>",       self._rs_r_move)
+        r_edge.bind("<ButtonRelease-1>", lambda e: self._do_save())
 
         self.canvas = tk.Canvas(mid, bg=t["bg"], highlightthickness=0, bd=0,
                                 yscrollcommand=self.vsb.set)
@@ -265,8 +275,7 @@ class TodoWidget:
 
         self.sf = tk.Frame(self.canvas, bg=t["bg"])
         self._sf_id = self.canvas.create_window((0, 0), window=self.sf, anchor="nw")
-        self.sf.bind("<Configure>",
-                     lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.sf.bind("<Configure>", lambda e: self._update_scrollregion())
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         self._bind_scroll(self.canvas)
         self._bind_scroll(self.sf)
@@ -337,9 +346,22 @@ class TodoWidget:
         for child in widget.winfo_children():
             self._bind_scroll_recursive(child)
 
+    def _update_scrollregion(self):
+        bb = self.canvas.bbox("all")
+        if bb:
+            self.canvas.configure(scrollregion=(0, 0, bb[2], bb[3]))
+
     def _on_canvas_configure(self, e):
         self.canvas.itemconfig(self._sf_id, width=e.width)
-        wl = max(80, e.width - 78)
+        # 디바운스: 리사이즈 드래그 중 과도한 업데이트 방지
+        if hasattr(self, '_wl_job'):
+            try: self.root.after_cancel(self._wl_job)
+            except Exception: pass
+        cw = e.width
+        self._wl_job = self.root.after(80, lambda: self._apply_wraplength(cw))
+
+    def _apply_wraplength(self, canvas_width):
+        wl = max(80, canvas_width - 78)
         for lbl in self._text_labels:
             try:
                 lbl.config(wraplength=wl)
@@ -367,6 +389,10 @@ class TodoWidget:
         w = max(220, self._rsw + (e.x_root - self._rsx))
         h = max(300, self._rsh + (e.y_root - self._rsy))
         self.root.geometry(f"{w}x{h}")
+
+    def _rs_r_move(self, e):
+        w = max(220, self._rsw + (e.x_root - self._rsx))
+        self.root.geometry(f"{w}x{self._rsh}")
 
     def _rs_b_start(self, e):
         self._rsy = e.y_root
@@ -723,32 +749,32 @@ class TodoWidget:
         def setup(icon):
             icon.visible = True
 
-        # checked 콜백: 현재 상태를 실시간 반영
-        def aot_checked(item):
-            return self.data.get("always_on_top", True)
+        # 텍스트를 callable로 설정 → 메뉴 열 때마다 현재 상태 이모지 반영
+        def aot_text(item):
+            on = self.data.get("always_on_top", True)
+            return ("✅ 항상 위에 표시 [켜짐]" if on else "⬛ 항상 위에 표시 [꺼짐]")
 
-        def startup_checked(item):
-            return get_startup()
+        def startup_text(item):
+            on = get_startup()
+            return ("✅ 윈도우 시작 시 자동 실행 [켜짐]" if on else "⬛ 윈도우 시작 시 자동 실행 [꺼짐]")
 
         menu = pystray.Menu(
-            pystray.MenuItem("할일위젯 열기",
+            pystray.MenuItem("📋 할일위젯 열기",
                              lambda: self.root.after(0, self.show), default=True),
-            pystray.MenuItem("전체 목록 보기",
+            pystray.MenuItem("📂 전체 목록 보기",
                              lambda: self.root.after(0, self.open_list)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("항상 위에 표시",
-                             lambda: self.root.after(0, self._toggle_aot),
-                             checked=aot_checked),
-            pystray.MenuItem("윈도우 시작 시 자동 실행",
-                             lambda: self.root.after(0, self._toggle_startup),
-                             checked=startup_checked),
+            pystray.MenuItem(aot_text,
+                             lambda: self.root.after(0, self._toggle_aot)),
+            pystray.MenuItem(startup_text,
+                             lambda: self.root.after(0, self._toggle_startup)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("백업 (내보내기)",
+            pystray.MenuItem("💾 백업 (내보내기)",
                              lambda: self.root.after(0, self.backup)),
-            pystray.MenuItem("불러오기 (가져오기)",
+            pystray.MenuItem("📥 불러오기 (가져오기)",
                              lambda: self.root.after(0, self.restore)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("완전 종료",
+            pystray.MenuItem("❌ 완전 종료",
                              lambda: self.root.after(0, self.quit_app)),
         )
 
@@ -838,8 +864,13 @@ class ListWindow:
 
         self.sf = tk.Frame(self.canvas, bg=t["bg"])
         self._sf_id = self.canvas.create_window((0, 0), window=self.sf, anchor="nw")
-        self.sf.bind("<Configure>",
-                     lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+
+        def _list_update_sr():
+            bb = self.canvas.bbox("all")
+            if bb:
+                self.canvas.configure(scrollregion=(0, 0, bb[2], bb[3]))
+
+        self.sf.bind("<Configure>", lambda e: _list_update_sr())
         self.canvas.bind("<Configure>",
                          lambda e: self.canvas.itemconfig(self._sf_id, width=e.width))
         self.sf.bind("<MouseWheel>",
