@@ -11,7 +11,6 @@ from tkinter import filedialog, messagebox
 import json, os, sys, threading, copy, shutil
 from datetime import date
 
-# ── 선택적 의존성 ────────────────────────────────────────────
 try:
     import pystray
     from PIL import Image, ImageDraw
@@ -28,8 +27,8 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════
 #  상수 / 테마
 # ══════════════════════════════════════════════════════════════
-APP_NAME    = "할일위젯"
-REG_KEY     = "TodoWidget"      # 레지스트리는 ASCII 키 사용
+APP_NAME = "할일위젯"
+REG_KEY  = "TodoWidget"
 
 def _data_path():
     base = (os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)
@@ -114,22 +113,18 @@ def set_startup(enable: bool):
     if not REG_OK:
         return
     try:
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0, winreg.KEY_SET_VALUE
-        )
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Microsoft\Windows\CurrentVersion\Run",
+                             0, winreg.KEY_SET_VALUE)
         if enable:
             if getattr(sys, 'frozen', False):
                 cmd = f'"{sys.executable}"'
             else:
-                # pythonw.exe 사용 (콘솔 창 없이 실행)
-                exe_dir  = os.path.dirname(sys.executable)
-                pythonw  = os.path.join(exe_dir, "pythonw.exe")
+                exe_dir = os.path.dirname(sys.executable)
+                pythonw = os.path.join(exe_dir, "pythonw.exe")
                 if not os.path.exists(pythonw):
                     pythonw = sys.executable
-                script = os.path.abspath(__file__)
-                cmd = f'"{pythonw}" "{script}"'
+                cmd = f'"{pythonw}" "{os.path.abspath(__file__)}"'
             winreg.SetValueEx(key, REG_KEY, 0, winreg.REG_SZ, cmd)
         else:
             try:
@@ -144,11 +139,9 @@ def get_startup() -> bool:
     if not REG_OK:
         return False
     try:
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0, winreg.KEY_READ
-        )
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Microsoft\Windows\CurrentVersion\Run",
+                             0, winreg.KEY_READ)
         try:
             winreg.QueryValueEx(key, REG_KEY)
             result = True
@@ -160,7 +153,7 @@ def get_startup() -> bool:
         return False
 
 # ══════════════════════════════════════════════════════════════
-#  트레이 아이콘 이미지 생성
+#  트레이 아이콘 이미지
 # ══════════════════════════════════════════════════════════════
 def make_tray_icon():
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
@@ -172,7 +165,7 @@ def make_tray_icon():
     return img
 
 # ══════════════════════════════════════════════════════════════
-#  날짜 뱃지 헬퍼
+#  날짜 뱃지
 # ══════════════════════════════════════════════════════════════
 def date_badge(created: str) -> str:
     today = date.today().isoformat()
@@ -180,9 +173,7 @@ def date_badge(created: str) -> str:
         return ""
     try:
         diff = (date.today() - date.fromisoformat(created)).days
-        if diff == 1:
-            return " (어제)"
-        return f" ({diff}일 전)"
+        return " (어제)" if diff == 1 else f" ({diff}일 전)"
     except Exception:
         return ""
 
@@ -192,22 +183,18 @@ def date_badge(created: str) -> str:
 class TodoWidget:
     def __init__(self):
         self.data     = load_data()
-        # 실제 시작프로그램 등록 상태로 data 동기화
         self.data["startup"] = get_startup()
         self.todos    = self.data["todos"]
         self.next_id  = max((t["id"] for t in self.todos), default=0) + 1
         self.tray     = None
         self.list_win = None
 
-        # 창 드래그
         self._dx = self._dy = 0
-        # 창 리사이즈 공통
         self._rsx = self._rsy = self._rsw = self._rsh = 0
-        # 할일 드래그 정렬
-        self._drag_td      = None
-        self._drag_orig_y  = 0
+        self._drag_td       = None
+        self._drag_orig_y   = 0
         self._drag_orig_idx = 0
-        self._drag_rows    = []   # (row_widget, center_y) 리스트
+        self._drag_rows     = []
 
         self.root = tk.Tk()
         self.root.title(APP_NAME)
@@ -222,7 +209,6 @@ class TodoWidget:
 
         self.root.mainloop()
 
-    # ── 현재 테마 ────────────────────────────────────────────
     @property
     def t(self):
         return THEMES.get(self.data.get("theme", "yellow"), THEMES["yellow"])
@@ -246,12 +232,12 @@ class TodoWidget:
         self.hdr.pack(fill="x")
         self.hdr.pack_propagate(False)
 
-        days = ["월", "화", "수", "목", "금", "토", "일"]
+        days = ["월","화","수","목","금","토","일"]
         d = date.today()
-        today_str = d.strftime(f"%Y.%m.%d ({days[d.weekday()]})")
-        self.title_lbl = tk.Label(self.hdr, text=f"📋 {today_str}",
-                                   bg=t["header"], fg=t["header_fg"],
-                                   font=("맑은 고딕", 9, "bold"))
+        self.title_lbl = tk.Label(
+            self.hdr, bg=t["header"], fg=t["header_fg"],
+            text=f"📋 {d.strftime(f'%Y.%m.%d ({days[d.weekday()]})')}",
+            font=("맑은 고딕", 9, "bold"))
         self.title_lbl.pack(side="left", padx=8)
 
         btn_f = tk.Frame(self.hdr, bg=t["header"])
@@ -268,12 +254,13 @@ class TodoWidget:
         mid = tk.Frame(self.root, bg=t["bg"])
         mid.pack(fill="both", expand=True)
 
-        self.canvas = tk.Canvas(mid, bg=t["bg"], highlightthickness=0, bd=0)
-        self.vsb = tk.Scrollbar(mid, orient="vertical", command=self.canvas.yview,
-                                width=10)
-        self.canvas.configure(yscrollcommand=self.vsb.set)
+        self.vsb = tk.Scrollbar(mid, orient="vertical", width=12)
         self.vsb.pack(side="right", fill="y")
+
+        self.canvas = tk.Canvas(mid, bg=t["bg"], highlightthickness=0, bd=0,
+                                yscrollcommand=self.vsb.set)
         self.canvas.pack(side="left", fill="both", expand=True)
+        self.vsb.config(command=self.canvas.yview)
 
         self.sf = tk.Frame(self.canvas, bg=t["bg"])
         self._sf_id = self.canvas.create_window((0, 0), window=self.sf, anchor="nw")
@@ -287,9 +274,11 @@ class TodoWidget:
         # ── 상태바 ───────────────────────────────────────────
         sb = tk.Frame(self.root, bg=t["bg"])
         sb.pack(fill="x", padx=6, pady=(1, 2))
+
         self.stat_lbl = tk.Label(sb, text="", bg=t["bg"], fg=t["done_fg"],
                                   font=("맑은 고딕", 8))
         self.stat_lbl.pack(side="left")
+
         for txt, cmd in [("완료삭제", self.clear_done), ("목록", self.open_list)]:
             lb = tk.Label(sb, text=txt, bg=t["bg"], fg=t["done_fg"],
                           font=("맑은 고딕", 8), cursor="hand2")
@@ -299,45 +288,38 @@ class TodoWidget:
         # ── 입력 영역 ────────────────────────────────────────
         inp = tk.Frame(self.root, bg=t["header"], pady=4)
         inp.pack(fill="x")
+
         self.entry_var = tk.StringVar()
         self.entry = tk.Entry(inp, textvariable=self.entry_var,
                               bg=t["input_bg"], fg=t["fg"], insertbackground=t["fg"],
                               relief="flat", font=("맑은 고딕", 9), bd=4)
         self.entry.pack(side="left", fill="x", expand=True, padx=(6, 2), ipady=3)
         self.entry.bind("<Return>", lambda e: self.add_todo())
+
         add_btn = tk.Label(inp, text=" + ", bg=t["btn_bg"], fg=t["btn_fg"],
                            font=("맑은 고딕", 13, "bold"), cursor="hand2")
         add_btn.pack(side="right", padx=(2, 6), pady=1)
         add_btn.bind("<Button-1>", lambda e: self.add_todo())
 
-        # ── 리사이즈 핸들 (하단 + 우측 + 우하단 코너) ────────
-        self._add_resize_handles()
+        # ── 하단 리사이즈 스트립 (코너 그립 포함) ─────────────
+        # place 방식 제거 → pack 방식으로 스트립 추가해 UI 짤림 방지
+        foot = tk.Frame(self.root, bg=t["header"], height=8)
+        foot.pack(fill="x")
+        foot.pack_propagate(False)
 
-        self.refresh()
-
-    def _add_resize_handles(self):
-        t = self.t
-        # 우하단 코너
-        grip = tk.Label(self.root, text="◢", bg=t["bg"], fg=t["done_fg"],
-                        font=("맑은 고딕", 8), cursor="size_nw_se")
-        grip.place(relx=1.0, rely=1.0, anchor="se", width=14, height=14)
+        grip = tk.Label(foot, text="◢", bg=t["header"], fg=t["header_fg"],
+                        font=("맑은 고딕", 7), cursor="size_nw_se")
+        grip.pack(side="right", padx=2)
         grip.bind("<ButtonPress-1>",   self._rs_start)
         grip.bind("<B1-Motion>",       self._rs_move)
         grip.bind("<ButtonRelease-1>", lambda e: self._do_save())
 
-        # 우측 엣지
-        r_edge = tk.Frame(self.root, bg=t["bg"], cursor="sb_h_double_arrow")
-        r_edge.place(relx=1.0, rely=0.0, anchor="ne", width=5, relheight=1.0)
-        r_edge.bind("<ButtonPress-1>",   self._rs_r_start)
-        r_edge.bind("<B1-Motion>",       self._rs_r_move)
-        r_edge.bind("<ButtonRelease-1>", lambda e: self._do_save())
+        # 스트립 자체는 하단 엣지 리사이즈
+        foot.bind("<ButtonPress-1>",   self._rs_b_start)
+        foot.bind("<B1-Motion>",       self._rs_b_move)
+        foot.bind("<ButtonRelease-1>", lambda e: self._do_save())
 
-        # 하단 엣지
-        b_edge = tk.Frame(self.root, bg=t["bg"], cursor="sb_v_double_arrow")
-        b_edge.place(relx=0.0, rely=1.0, anchor="sw", relwidth=1.0, height=5)
-        b_edge.bind("<ButtonPress-1>",   self._rs_b_start)
-        b_edge.bind("<B1-Motion>",       self._rs_b_move)
-        b_edge.bind("<ButtonRelease-1>", lambda e: self._do_save())
+        self.refresh()
 
     def _hbtn(self, parent, text, cmd):
         lb = tk.Label(parent, text=text, bg=self.t["header"], fg=self.t["header_fg"],
@@ -346,9 +328,7 @@ class TodoWidget:
         lb.bind("<Button-1>", lambda e: cmd())
         return lb
 
-    # ══════════════════════════════════════════════════════════
-    #  스크롤 바인딩 (자식 위젯 포함)
-    # ══════════════════════════════════════════════════════════
+    # ── 스크롤 바인딩 ────────────────────────────────────────
     def _bind_scroll(self, widget):
         widget.bind("<MouseWheel>", self._scroll)
 
@@ -360,9 +340,7 @@ class TodoWidget:
     def _scroll(self, e):
         self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
 
-    # ══════════════════════════════════════════════════════════
-    #  창 드래그
-    # ══════════════════════════════════════════════════════════
+    # ── 창 드래그 ────────────────────────────────────────────
     def _drag_start(self, e):
         self._dx = e.x_root - self.root.winfo_x()
         self._dy = e.y_root - self.root.winfo_y()
@@ -370,9 +348,7 @@ class TodoWidget:
     def _drag_move(self, e):
         self.root.geometry(f"+{e.x_root - self._dx}+{e.y_root - self._dy}")
 
-    # ══════════════════════════════════════════════════════════
-    #  창 리사이즈 (우하단 코너 / 우측 / 하단)
-    # ══════════════════════════════════════════════════════════
+    # ── 창 리사이즈 ──────────────────────────────────────────
     def _rs_start(self, e):
         self._rsx, self._rsy = e.x_root, e.y_root
         self._rsw = self.root.winfo_width()
@@ -382,15 +358,6 @@ class TodoWidget:
         w = max(220, self._rsw + (e.x_root - self._rsx))
         h = max(300, self._rsh + (e.y_root - self._rsy))
         self.root.geometry(f"{w}x{h}")
-
-    def _rs_r_start(self, e):
-        self._rsx = e.x_root
-        self._rsw = self.root.winfo_width()
-        self._rsh = self.root.winfo_height()
-
-    def _rs_r_move(self, e):
-        w = max(220, self._rsw + (e.x_root - self._rsx))
-        self.root.geometry(f"{w}x{self._rsh}")
 
     def _rs_b_start(self, e):
         self._rsy = e.y_root
@@ -408,12 +375,11 @@ class TodoWidget:
         text = self.entry_var.get().strip()
         if not text:
             return
-        todo = {
+        self.todos.append({
             "id": self.next_id, "text": text,
             "done": False, "created_date": date.today().isoformat(),
-        }
+        })
         self.next_id += 1
-        self.todos.append(todo)
         self.entry_var.set("")
         self._do_save(); self.refresh(); self._sync_list()
 
@@ -425,54 +391,6 @@ class TodoWidget:
         if todo in self.todos:
             self.todos.remove(todo)
         self._do_save(); self.refresh(); self._sync_list()
-
-    def edit(self, todo):
-        """팝업 편집창"""
-        t = self.t
-        dlg = tk.Toplevel(self.root)
-        dlg.title("할일 수정")
-        dlg.resizable(False, False)
-        dlg.configure(bg=t["bg"])
-        dlg.wm_attributes('-topmost', True)
-        dlg.overrideredirect(True)
-
-        # 위치: 메인 위젯 중앙
-        rx = self.root.winfo_x() + self.root.winfo_width() // 2 - 130
-        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 45
-        dlg.geometry(f"260x90+{rx}+{ry}")
-
-        tk.Label(dlg, text="할일 수정", bg=t["header"], fg=t["header_fg"],
-                 font=("맑은 고딕", 9, "bold")).pack(fill="x", ipady=4)
-
-        var = tk.StringVar(value=todo["text"])
-        ent = tk.Entry(dlg, textvariable=var, bg=t["input_bg"], fg=t["fg"],
-                       insertbackground=t["fg"], relief="flat",
-                       font=("맑은 고딕", 10), bd=4)
-        ent.pack(fill="x", padx=8, pady=8, ipady=4)
-        ent.focus_set(); ent.select_range(0, "end")
-
-        btn_f = tk.Frame(dlg, bg=t["bg"])
-        btn_f.pack(fill="x", padx=8, pady=(0, 8))
-
-        def commit():
-            txt = var.get().strip()
-            if txt:
-                todo["text"] = txt
-                self._do_save(); self.refresh(); self._sync_list()
-            dlg.destroy()
-
-        def cancel():
-            dlg.destroy()
-
-        tk.Button(btn_f, text="저장", command=commit,
-                  bg=t["btn_bg"], fg=t["btn_fg"], relief="flat",
-                  font=("맑은 고딕", 9), padx=12).pack(side="right", padx=2)
-        tk.Button(btn_f, text="취소", command=cancel,
-                  bg=t["bg"], fg=t["fg"], relief="flat",
-                  font=("맑은 고딕", 9), padx=8).pack(side="right", padx=2)
-
-        ent.bind("<Return>", lambda e: commit())
-        ent.bind("<Escape>", lambda e: cancel())
 
     def clear_done(self):
         self.todos[:] = [t for t in self.todos if not t["done"]]
@@ -513,8 +431,7 @@ class TodoWidget:
                 self._render_item(td, today)
 
         done  = sum(1 for td in self.todos if td["done"])
-        total = len(self.todos)
-        self.stat_lbl.config(text=f"{done}/{total} 완료")
+        self.stat_lbl.config(text=f"{done}/{len(self.todos)} 완료")
         self.sf.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
@@ -539,34 +456,81 @@ class TodoWidget:
         chk.pack(side="left", padx=(0, 2))
         chk.bind("<Button-1>", lambda e, td=td: self.toggle(td))
 
-        # 텍스트
-        badge   = date_badge(td.get("created_date", today))
-        display = td["text"] + badge
-        fg      = t["done_fg"] if done else t["fg"]
-        fnt     = ("맑은 고딕", 9, "overstrike") if done else ("맑은 고딕", 9)
-        lbl = tk.Label(row, text=display, bg=t["bg"], fg=fg, font=fnt,
-                       anchor="w", cursor="hand2", wraplength=150, justify="left")
-        lbl.pack(side="left", fill="x", expand=True)
-        lbl.bind("<Button-1>",        lambda e, td=td: self.toggle(td))
-        lbl.bind("<Double-Button-1>", lambda e, td=td: self.edit(td))
-
-        # ✏ 수정 버튼
-        edit_lbl = tk.Label(row, text="✏", bg=t["bg"], fg=t["done_fg"],
-                            font=("맑은 고딕", 9), cursor="hand2")
-        edit_lbl.pack(side="right", padx=1)
-        edit_lbl.bind("<Button-1>", lambda e, td=td: self.edit(td))
-
-        # × 삭제 버튼
+        # 오른쪽 버튼들 (먼저 pack해야 텍스트가 남은 공간 채움)
         x_lbl = tk.Label(row, text="×", bg=t["bg"], fg=t["done_fg"],
                          font=("맑은 고딕", 11), cursor="hand2")
         x_lbl.pack(side="right", padx=1)
         x_lbl.bind("<Button-1>", lambda e, td=td: self.delete(td))
 
-        # 마우스 스크롤을 자식 위젯 전체에 바인딩
-        self._bind_scroll_recursive(row)
+        edit_lbl = tk.Label(row, text="✏", bg=t["bg"], fg=t["done_fg"],
+                            font=("맑은 고딕", 9), cursor="hand2")
+        edit_lbl.pack(side="right", padx=1)
+        edit_lbl.bind("<Button-1>", lambda e, td=td, r=row: self._inline_edit(td, r))
 
-        # 드래그 정렬용 행 정보 저장 (렌더링 후 갱신)
+        # 텍스트 레이블
+        badge   = date_badge(td.get("created_date", today))
+        fg      = t["done_fg"] if done else t["fg"]
+        fnt     = ("맑은 고딕", 9, "overstrike") if done else ("맑은 고딕", 9)
+        lbl = tk.Label(row, text=td["text"] + badge, bg=t["bg"], fg=fg, font=fnt,
+                       anchor="w", cursor="hand2", wraplength=130, justify="left")
+        lbl.pack(side="left", fill="x", expand=True)
+        lbl.bind("<Button-1>",        lambda e, td=td: self.toggle(td))
+        lbl.bind("<Double-Button-1>", lambda e, td=td, r=row: self._inline_edit(td, r))
+
+        self._bind_scroll_recursive(row)
         self._drag_rows.append((row, td))
+
+    def _inline_edit(self, td, row):
+        """행 내 인라인 편집 모드 (팝업 없음)"""
+        for w in row.winfo_children():
+            w.destroy()
+
+        t    = self.t
+        done = td["done"]
+
+        # 드래그 핸들 (비활성)
+        tk.Label(row, text="≡", bg=t["bg"], fg=t["done_fg"],
+                 font=("맑은 고딕", 9)).pack(side="left", padx=(0, 1))
+
+        # 체크박스 (비활성)
+        tk.Label(row, text="☑" if done else "☐",
+                 bg=t["bg"], fg=t["done_fg"] if done else t["fg"],
+                 font=("맑은 고딕", 11)).pack(side="left", padx=(0, 2))
+
+        var = tk.StringVar(value=td["text"])
+
+        def commit(e=None):
+            txt = var.get().strip()
+            if txt:
+                td["text"] = txt
+            self._do_save(); self.refresh(); self._sync_list()
+
+        def cancel(e=None):
+            self.refresh()
+
+        # ✗ 취소 (right, 먼저 pack)
+        cancel_lbl = tk.Label(row, text="✗", bg=t["bg"], fg="#E53935",
+                              font=("맑은 고딕", 11, "bold"), cursor="hand2")
+        cancel_lbl.pack(side="right", padx=1)
+        cancel_lbl.bind("<Button-1>", lambda e: cancel())
+
+        # ✓ 확인 (right)
+        ok_lbl = tk.Label(row, text="✓", bg=t["bg"], fg="#43A047",
+                          font=("맑은 고딕", 11, "bold"), cursor="hand2")
+        ok_lbl.pack(side="right", padx=1)
+        ok_lbl.bind("<Button-1>", lambda e: commit())
+
+        # 입력창 (나머지 공간)
+        ent = tk.Entry(row, textvariable=var, bg=t["input_bg"], fg=t["fg"],
+                       insertbackground=t["fg"], relief="flat",
+                       font=("맑은 고딕", 9), bd=2)
+        ent.pack(side="left", fill="x", expand=True, padx=2, ipady=2)
+        ent.focus_set()
+        ent.select_range(0, "end")
+        ent.bind("<Return>", commit)
+        ent.bind("<Escape>", cancel)
+
+        self._bind_scroll_recursive(row)
 
     # ══════════════════════════════════════════════════════════
     #  할일 드래그 정렬
@@ -580,24 +544,20 @@ class TodoWidget:
     def _item_drag_move(self, e):
         if self._drag_td is None:
             return
-        dy       = e.y_root - self._drag_orig_y
-        row_h    = 26  # 행 평균 높이(px)
-        delta    = round(dy / row_h)
-        target   = max(0, min(len(self._drag_rows) - 1, self._drag_orig_idx + delta))
-        t        = self.t
+        dy     = e.y_root - self._drag_orig_y
+        target = max(0, min(len(self._drag_rows) - 1,
+                            self._drag_orig_idx + round(dy / 26)))
+        t = self.t
         for i, (rw, _) in enumerate(self._drag_rows):
             rw.config(bg=t["drag_over"] if i == target else t["bg"])
 
     def _item_drag_end(self, e):
         if self._drag_td is None:
             return
-        dy       = e.y_root - self._drag_orig_y
-        row_h    = 26
-        delta    = round(dy / row_h)
-        orig_idx = self._drag_orig_idx
-        target   = max(0, min(len(self.todos) - 1, orig_idx + delta))
-
-        td = self.todos.pop(orig_idx)
+        dy     = e.y_root - self._drag_orig_y
+        orig   = self._drag_orig_idx
+        target = max(0, min(len(self.todos) - 1, orig + round(dy / 26)))
+        td = self.todos.pop(orig)
         self.todos.insert(target, td)
         self._drag_td = None
         self._do_save(); self.refresh(); self._sync_list()
@@ -606,13 +566,10 @@ class TodoWidget:
     #  창 관리
     # ══════════════════════════════════════════════════════════
     def hide(self):
-        self._do_save()
-        self.root.withdraw()
+        self._do_save(); self.root.withdraw()
 
     def show(self):
-        self.root.deiconify()
-        self.root.lift()
-        self.root.focus_force()
+        self.root.deiconify(); self.root.lift(); self.root.focus_force()
 
     def quit_app(self):
         self._do_save()
@@ -625,8 +582,7 @@ class TodoWidget:
     # ══════════════════════════════════════════════════════════
     def backup(self):
         path = filedialog.asksaveasfilename(
-            parent=self.root,
-            title="할일 백업 저장",
+            parent=self.root, title="할일 백업 저장",
             defaultextension=".json",
             filetypes=[("JSON 파일", "*.json"), ("모든 파일", "*.*")],
             initialfile=f"todos_backup_{date.today().isoformat()}.json",
@@ -640,8 +596,7 @@ class TodoWidget:
 
     def restore(self):
         path = filedialog.askopenfilename(
-            parent=self.root,
-            title="할일 불러오기",
+            parent=self.root, title="할일 불러오기",
             filetypes=[("JSON 파일", "*.json"), ("모든 파일", "*.*")],
         )
         if not path:
@@ -658,8 +613,7 @@ class TodoWidget:
             self.todos = d["todos"]
             self.next_id = max((t["id"] for t in self.todos), default=0) + 1
             save_data(self.data)
-            self.refresh()
-            self._sync_list()
+            self.refresh(); self._sync_list()
             messagebox.showinfo("완료", f"{len(self.todos)}개 항목을 불러왔습니다.", parent=self.root)
         except Exception as ex:
             messagebox.showerror("오류", str(ex), parent=self.root)
@@ -676,7 +630,6 @@ class TodoWidget:
         m.add_command(label=f"{'✓' if aot else '  '} 항상 위에 표시",
                       command=self._toggle_aot)
 
-        # 투명도
         op_m = tk.Menu(m, tearoff=0, bg=t["bg"], fg=t["fg"])
         cur_op = self.data.get("opacity", 0.95)
         for val, label in [(0.75, "75%"), (0.85, "85%"), (0.95, "95%"), (1.0, "100%")]:
@@ -685,7 +638,6 @@ class TodoWidget:
                              command=lambda v=val: self._set_opacity(v))
         m.add_cascade(label="투명도", menu=op_m)
 
-        # 테마
         th_m = tk.Menu(m, tearoff=0, bg=t["bg"], fg=t["fg"])
         cur_th = self.data.get("theme", "yellow")
         for key, info in THEMES.items():
@@ -700,11 +652,11 @@ class TodoWidget:
                       command=self._toggle_startup)
 
         m.add_separator()
-        m.add_command(label="전체 목록 보기",    command=self.open_list)
-        m.add_command(label="백업 (내보내기)",   command=self.backup)
+        m.add_command(label="전체 목록 보기",      command=self.open_list)
+        m.add_command(label="백업 (내보내기)",     command=self.backup)
         m.add_command(label="불러오기 (가져오기)", command=self.restore)
         m.add_separator()
-        m.add_command(label="완전 종료",         command=self.quit_app)
+        m.add_command(label="완전 종료",           command=self.quit_app)
 
         try:
             m.tk_popup(x, y)
@@ -744,18 +696,41 @@ class TodoWidget:
         self._do_save()
 
     # ══════════════════════════════════════════════════════════
-    #  시스템 트레이
+    #  시스템 트레이 (설정 항목 포함)
     # ══════════════════════════════════════════════════════════
     def _start_tray(self):
         def setup(icon):
             icon.visible = True
 
+        # checked 콜백: 현재 상태를 실시간 반영
+        def aot_checked(item):
+            return self.data.get("always_on_top", True)
+
+        def startup_checked(item):
+            return get_startup()
+
         menu = pystray.Menu(
-            pystray.MenuItem("할일위젯 열기",   lambda: self.root.after(0, self.show), default=True),
-            pystray.MenuItem("전체 목록 보기",  lambda: self.root.after(0, self.open_list)),
+            pystray.MenuItem("할일위젯 열기",
+                             lambda: self.root.after(0, self.show), default=True),
+            pystray.MenuItem("전체 목록 보기",
+                             lambda: self.root.after(0, self.open_list)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("완전 종료",       lambda: self.root.after(0, self.quit_app)),
+            pystray.MenuItem("항상 위에 표시",
+                             lambda: self.root.after(0, self._toggle_aot),
+                             checked=aot_checked),
+            pystray.MenuItem("윈도우 시작 시 자동 실행",
+                             lambda: self.root.after(0, self._toggle_startup),
+                             checked=startup_checked),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("백업 (내보내기)",
+                             lambda: self.root.after(0, self.backup)),
+            pystray.MenuItem("불러오기 (가져오기)",
+                             lambda: self.root.after(0, self.restore)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("완전 종료",
+                             lambda: self.root.after(0, self.quit_app)),
         )
+
         try:
             icon_img = make_tray_icon()
         except Exception:
@@ -830,11 +805,13 @@ class ListWindow:
 
         lf = tk.Frame(self.win, bg=t["bg"])
         lf.pack(fill="both", expand=True, padx=8, pady=4)
-        self.canvas = tk.Canvas(lf, bg=t["bg"], highlightthickness=0)
-        vsb = tk.Scrollbar(lf, orient="vertical", command=self.canvas.yview, width=10)
-        self.canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side="right", fill="y")
+
+        self.vsb = tk.Scrollbar(lf, orient="vertical", width=12)
+        self.vsb.pack(side="right", fill="y")
+        self.canvas = tk.Canvas(lf, bg=t["bg"], highlightthickness=0,
+                                yscrollcommand=self.vsb.set)
         self.canvas.pack(side="left", fill="both", expand=True)
+        self.vsb.config(command=self.canvas.yview)
         self.canvas.bind("<MouseWheel>",
                          lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
 
@@ -859,17 +836,13 @@ class ListWindow:
         self.refresh()
 
     def _set_filter(self, mode):
-        self.filter_mode = mode
-        self._update_filter_btns()
-        self.refresh()
+        self.filter_mode = mode; self._update_filter_btns(); self.refresh()
 
     def _update_filter_btns(self):
         t = self.app.t
         for mode, btn in self.filter_btns.items():
-            if mode == self.filter_mode:
-                btn.config(bg=t["header"], fg=t["header_fg"])
-            else:
-                btn.config(bg=t["bg"], fg=t["fg"])
+            btn.config(bg=t["header"] if mode == self.filter_mode else t["bg"],
+                       fg=t["header_fg"] if mode == self.filter_mode else t["fg"])
 
     def refresh(self):
         t = self.app.t
@@ -896,8 +869,7 @@ class ListWindow:
         total = len(self.app.todos)
         done  = sum(1 for td in self.app.todos if td["done"])
         self.stat_lbl.config(
-            text=f"총 {total}개  |  미완료 {total - done}개  |  완료 {done}개"
-        )
+            text=f"총 {total}개  |  미완료 {total - done}개  |  완료 {done}개")
 
     def _row(self, td, today):
         t    = self.app.t
@@ -921,41 +893,81 @@ class ListWindow:
             except Exception:
                 badge_txt = ""
 
+        # 오른쪽 버튼 먼저 pack
+        del_lbl = tk.Label(row, text="삭제", bg=t["bg"], fg=t["done_fg"],
+                           font=("맑은 고딕", 8), cursor="hand2")
+        del_lbl.pack(side="right", padx=4)
+        del_lbl.bind("<Button-1>", lambda e, td=td: self._delete(td))
+
+        edit_lbl = tk.Label(row, text="✏", bg=t["bg"], fg=t["done_fg"],
+                            font=("맑은 고딕", 8), cursor="hand2")
+        edit_lbl.pack(side="right", padx=2)
+        edit_lbl.bind("<Button-1>", lambda e, td=td, r=row: self._inline_edit(td, r))
+
+        tk.Label(row, text=badge_txt, bg=t["bg"], fg=t["done_fg"],
+                 font=("맑은 고딕", 7), width=7).pack(side="right")
+
         fnt = ("맑은 고딕", 9, "overstrike") if done else ("맑은 고딕", 9)
         fg  = t["done_fg"] if done else t["fg"]
         lbl = tk.Label(row, text=td["text"], bg=t["bg"], fg=fg, font=fnt,
                        anchor="w", cursor="hand2")
         lbl.pack(side="left", fill="x", expand=True, padx=6)
         lbl.bind("<Button-1>",        lambda e, td=td: self._toggle(td))
-        lbl.bind("<Double-Button-1>", lambda e, td=td: self.app.edit(td))
+        lbl.bind("<Double-Button-1>", lambda e, td=td, r=row: self._inline_edit(td, r))
 
-        tk.Label(row, text=badge_txt, bg=t["bg"], fg=t["done_fg"],
-                 font=("맑은 고딕", 7), width=7).pack(side="left")
-
-        edit_lbl = tk.Label(row, text="✏", bg=t["bg"], fg=t["done_fg"],
-                            font=("맑은 고딕", 8), cursor="hand2")
-        edit_lbl.pack(side="right", padx=2)
-        edit_lbl.bind("<Button-1>", lambda e, td=td: self._edit(td))
-
-        del_lbl = tk.Label(row, text="삭제", bg=t["bg"], fg=t["done_fg"],
-                           font=("맑은 고딕", 8), cursor="hand2")
-        del_lbl.pack(side="right", padx=4)
-        del_lbl.bind("<Button-1>", lambda e, td=td: self._delete(td))
-
-        # 스크롤 바인딩
-        for w in [row, chk, lbl, edit_lbl, del_lbl]:
-            w.bind("<MouseWheel>",
-                   lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        scroll_cb = lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        for w in row.winfo_children():
+            w.bind("<MouseWheel>", scroll_cb)
+        row.bind("<MouseWheel>", scroll_cb)
 
         tk.Frame(self.sf, bg=t["sep"], height=1).pack(fill="x", padx=4)
+
+    def _inline_edit(self, td, row):
+        """목록 창 인라인 편집"""
+        for w in row.winfo_children():
+            w.destroy()
+
+        t    = self.app.t
+        done = td["done"]
+        tk.Label(row, text="☑" if done else "☐",
+                 bg=t["bg"], fg=t["done_fg"] if done else t["fg"],
+                 font=("맑은 고딕", 11)).pack(side="left")
+
+        var = tk.StringVar(value=td["text"])
+
+        def commit(e=None):
+            txt = var.get().strip()
+            if txt:
+                td["text"] = txt
+            self.app._do_save(); self.refresh(); self.app.refresh()
+
+        def cancel(e=None):
+            self.refresh()
+
+        cancel_lbl = tk.Label(row, text="✗", bg=t["bg"], fg="#E53935",
+                              font=("맑은 고딕", 11, "bold"), cursor="hand2")
+        cancel_lbl.pack(side="right", padx=1)
+        cancel_lbl.bind("<Button-1>", lambda e: cancel())
+
+        ok_lbl = tk.Label(row, text="✓", bg=t["bg"], fg="#43A047",
+                          font=("맑은 고딕", 11, "bold"), cursor="hand2")
+        ok_lbl.pack(side="right", padx=1)
+        ok_lbl.bind("<Button-1>", lambda e: commit())
+
+        ent = tk.Entry(row, textvariable=var, bg=t["input_bg"], fg=t["fg"],
+                       insertbackground=t["fg"], relief="flat",
+                       font=("맑은 고딕", 9), bd=2)
+        ent.pack(side="left", fill="x", expand=True, padx=6, ipady=2)
+        ent.focus_set(); ent.select_range(0, "end")
+        ent.bind("<Return>", commit); ent.bind("<Escape>", cancel)
+
+        scroll_cb = lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        for w in row.winfo_children():
+            w.bind("<MouseWheel>", scroll_cb)
 
     def _toggle(self, td):
         td["done"] = not td["done"]
         self.app._do_save(); self.refresh(); self.app.refresh()
-
-    def _edit(self, td):
-        self.app.edit(td)
-        self.win.after(300, self.refresh)
 
     def _delete(self, td):
         if td in self.app.todos:
