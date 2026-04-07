@@ -195,6 +195,7 @@ class TodoWidget:
         self._drag_orig_y   = 0
         self._drag_orig_idx = 0
         self._drag_rows     = []
+        self._text_labels   = []
 
         self.root = tk.Tk()
         self.root.title(APP_NAME)
@@ -266,8 +267,7 @@ class TodoWidget:
         self._sf_id = self.canvas.create_window((0, 0), window=self.sf, anchor="nw")
         self.sf.bind("<Configure>",
                      lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>",
-                         lambda e: self.canvas.itemconfig(self._sf_id, width=e.width))
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
         self._bind_scroll(self.canvas)
         self._bind_scroll(self.sf)
 
@@ -336,6 +336,15 @@ class TodoWidget:
         self._bind_scroll(widget)
         for child in widget.winfo_children():
             self._bind_scroll_recursive(child)
+
+    def _on_canvas_configure(self, e):
+        self.canvas.itemconfig(self._sf_id, width=e.width)
+        wl = max(80, e.width - 78)
+        for lbl in self._text_labels:
+            try:
+                lbl.config(wraplength=wl)
+            except Exception:
+                pass
 
     def _scroll(self, e):
         self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
@@ -420,6 +429,7 @@ class TodoWidget:
         for w in self.sf.winfo_children():
             w.destroy()
         self._drag_rows.clear()
+        self._text_labels.clear()
 
         today = date.today().isoformat()
         if not self.todos:
@@ -438,13 +448,17 @@ class TodoWidget:
     def _render_item(self, td, today):
         t    = self.t
         done = td["done"]
-        row  = tk.Frame(self.sf, bg=t["bg"])
-        row.pack(fill="x", padx=4, pady=1)
+
+        # 카드 테두리 (sep 색으로 1px 보더 효과)
+        card = tk.Frame(self.sf, bg=t["sep"])
+        card.pack(fill="x", padx=4, pady=2)
+        row = tk.Frame(card, bg=t["bg"])
+        row.pack(fill="x", padx=1, pady=1)
 
         # ≡ 드래그 핸들
         dh = tk.Label(row, text="≡", bg=t["bg"], fg=t["done_fg"],
                       font=("맑은 고딕", 9), cursor="fleur")
-        dh.pack(side="left", padx=(0, 1))
+        dh.pack(side="left", padx=(2, 1))
         dh.bind("<ButtonPress-1>",   lambda e, td=td, r=row: self._item_drag_start(e, td, r))
         dh.bind("<B1-Motion>",       self._item_drag_move)
         dh.bind("<ButtonRelease-1>", self._item_drag_end)
@@ -459,7 +473,7 @@ class TodoWidget:
         # 오른쪽 버튼들 (먼저 pack해야 텍스트가 남은 공간 채움)
         x_lbl = tk.Label(row, text="×", bg=t["bg"], fg=t["done_fg"],
                          font=("맑은 고딕", 11), cursor="hand2")
-        x_lbl.pack(side="right", padx=1)
+        x_lbl.pack(side="right", padx=(1, 2))
         x_lbl.bind("<Button-1>", lambda e, td=td: self.delete(td))
 
         edit_lbl = tk.Label(row, text="✏", bg=t["bg"], fg=t["done_fg"],
@@ -467,17 +481,22 @@ class TodoWidget:
         edit_lbl.pack(side="right", padx=1)
         edit_lbl.bind("<Button-1>", lambda e, td=td, r=row: self._inline_edit(td, r))
 
-        # 텍스트 레이블
-        badge   = date_badge(td.get("created_date", today))
-        fg      = t["done_fg"] if done else t["fg"]
-        fnt     = ("맑은 고딕", 9, "overstrike") if done else ("맑은 고딕", 9)
-        lbl = tk.Label(row, text=td["text"] + badge, bg=t["bg"], fg=fg, font=fnt,
-                       anchor="w", cursor="hand2", wraplength=130, justify="left")
-        lbl.pack(side="left", fill="x", expand=True)
+        # 텍스트 레이블 (날짜 뱃지 없음, 동적 wraplength)
+        cw = self.canvas.winfo_width()
+        if cw < 10:
+            cw = self.data["window"]["width"] - 16
+        wl = max(80, cw - 78)
+        fg  = t["done_fg"] if done else t["fg"]
+        fnt = ("맑은 고딕", 9, "overstrike") if done else ("맑은 고딕", 9)
+        lbl = tk.Label(row, text=td["text"], bg=t["bg"], fg=fg, font=fnt,
+                       anchor="w", cursor="hand2", wraplength=wl, justify="left")
+        lbl.pack(side="left", fill="x", expand=True, padx=(0, 2))
         lbl.bind("<Button-1>",        lambda e, td=td: self.toggle(td))
         lbl.bind("<Double-Button-1>", lambda e, td=td, r=row: self._inline_edit(td, r))
+        self._text_labels.append(lbl)
 
         self._bind_scroll_recursive(row)
+        self._bind_scroll_recursive(card)
         self._drag_rows.append((row, td))
 
     def _inline_edit(self, td, row):
@@ -540,16 +559,18 @@ class TodoWidget:
         self._drag_orig_y   = e.y_root
         self._drag_orig_idx = self.todos.index(td)
         row.config(bg=self.t["drag_over"])
+        row.master.config(bg=self.t["drag_over"])  # card border
 
     def _item_drag_move(self, e):
         if self._drag_td is None:
             return
         dy     = e.y_root - self._drag_orig_y
         target = max(0, min(len(self._drag_rows) - 1,
-                            self._drag_orig_idx + round(dy / 26)))
+                            self._drag_orig_idx + round(dy / 30)))
         t = self.t
         for i, (rw, _) in enumerate(self._drag_rows):
             rw.config(bg=t["drag_over"] if i == target else t["bg"])
+            rw.master.config(bg=t["drag_over"] if i == target else t["sep"])
 
     def _item_drag_end(self, e):
         if self._drag_td is None:
