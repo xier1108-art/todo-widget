@@ -28,15 +28,34 @@ APP_NAME = "할일위젯"
 REG_KEY  = "TodoWidget"
 FONT        = "맑은 고딕"  # 한글 기본 모던 폰트 (Windows 7+, SIL OFL-free)
 CARD_R      = 16           # 카드 모서리 반경 (px)
-ITEM_COLORS = [            # 아이템 색상 태그 팔레트 (None = 기본)
-    None,
-    "#EF4444",  # 빨강 — 중요/긴급
-    "#F97316",  # 주황 — 높음
-    "#EAB308",  # 노랑 — 보통
-    "#22C55E",  # 초록 — 낮음
-    "#3B82F6",  # 파랑 — 정보
-    "#A855F7",  # 보라 — 기타
-]
+ITEM_COLORS = [None, "#EF4444", "#F97316", "#EAB308",
+               "#22C55E", "#3B82F6", "#A855F7"]
+
+# 태그 색상별 카드 배경 팔레트 (card_bg, card_border)
+_TAG_BG_LIGHT = {
+    "#EF4444": ("#FEE2E2", "#FCA5A5"),
+    "#F97316": ("#FFEDD5", "#FDBA74"),
+    "#EAB308": ("#FEF9C3", "#FDE047"),
+    "#22C55E": ("#DCFCE7", "#86EFAC"),
+    "#3B82F6": ("#DBEAFE", "#93C5FD"),
+    "#A855F7": ("#F3E8FF", "#D8B4FE"),
+}
+_TAG_BG_DARK = {
+    "#EF4444": ("#450A0A", "#991B1B"),
+    "#F97316": ("#431407", "#9A3412"),
+    "#EAB308": ("#3D2800", "#A16207"),
+    "#22C55E": ("#052E16", "#166534"),
+    "#3B82F6": ("#1E3A8A", "#1D4ED8"),
+    "#A855F7": ("#3B0764", "#6B21A8"),
+}
+
+def _tag_colors(theme_key, item_color, default_bg, default_border):
+    """태그 색상에 맞는 (card_bg, card_border) 반환."""
+    if not item_color:
+        return default_bg, default_border
+    palette = _TAG_BG_DARK if theme_key == "dark" else _TAG_BG_LIGHT
+    bg, bd = palette.get(item_color, (default_bg, default_border))
+    return bg, bd
 
 def _data_path():
     base = (os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)
@@ -540,17 +559,57 @@ class TodoWidget:
                     self.list_win.refresh()
             except: pass
 
-    def _cycle_color(self, td, dot_lbl, redraw_fn):
-        """아이템 색상 태그를 순환 (full refresh 없이 targeted update)."""
+    def _show_color_picker(self, td, dot_lbl, e):
+        """색상 선택 팝업."""
+        t = self.t
+        x = dot_lbl.winfo_rootx()
+        y = dot_lbl.winfo_rooty() + dot_lbl.winfo_height() + 4
+
+        popup = tk.Toplevel(self.root)
+        popup.overrideredirect(True)
+        popup.wm_attributes('-topmost', True)
+
+        outer = tk.Frame(popup, bg=t["border"], padx=1, pady=1)
+        outer.pack()
+        inner = tk.Frame(outer, bg=t["card"], padx=8, pady=8)
+        inner.pack()
+
+        tk.Label(inner, text="색상 선택", bg=t["card"], fg=t["muted"],
+                 font=(FONT, 8)).grid(row=0, column=0, columnspan=8,
+                                      sticky="w", pady=(0, 6))
+
+        def pick(color):
+            td["color"] = color
+            self._do_save(); self.refresh(); self._sync_list()
+            try: popup.destroy()
+            except: pass
+
         cur = td.get("color")
-        try:    idx = ITEM_COLORS.index(cur)
-        except: idx = 0
-        td["color"] = ITEM_COLORS[(idx + 1) % len(ITEM_COLORS)]
-        new_c = td["color"] or self.t["border"]
-        dot_lbl.config(fg=new_c)
-        redraw_fn()          # 카드 border만 다시 그림
-        self._do_save()
-        self._sync_list()
+        # 기본(None) + 6색
+        options = [(None, t["muted"], "○")] + [(c, c, "●") for c in ITEM_COLORS[1:]]
+        for col, (color, fg_c, sym) in enumerate(options):
+            is_sel = (color == cur)
+            bg_c = t["accent"] if is_sel else t["card"]
+            fr = tk.Frame(inner, bg=bg_c, padx=3, pady=3)
+            fr.grid(row=1, column=col, padx=2)
+            btn = tk.Label(fr, text=sym, fg=fg_c, bg=bg_c,
+                           font=(FONT, 15), cursor="hand2")
+            btn.pack()
+            for w in (fr, btn):
+                w.bind("<Button-1>", lambda e, c=color: pick(c))
+                w.bind("<Enter>",    lambda e, f=fr, b=btn: (f.config(bg=t["drag"]),   b.config(bg=t["drag"])))
+                w.bind("<Leave>",    lambda e, f=fr, b=btn, sel=is_sel: (
+                    f.config(bg=t["accent"] if sel else t["card"]),
+                    b.config(bg=t["accent"] if sel else t["card"])))
+
+        # 화면 벗어남 방지
+        popup.update_idletasks()
+        pw = popup.winfo_reqwidth()
+        sw = self.root.winfo_screenwidth()
+        px = min(x, sw - pw - 4)
+        popup.geometry(f"+{px}+{y}")
+        popup.bind("<FocusOut>", lambda e: (popup.destroy() if popup.winfo_exists() else None))
+        popup.focus_set()
 
     # ──────────────────────────────────────────
     #  렌더링
@@ -594,33 +653,36 @@ class TodoWidget:
         done = td["done"]
         PAD  = 4
 
-        # 부모 캔버스 너비를 미리 계산 → height=1 지연 없이 즉시 렌더
+        # ── 카드 배경 색상 결정 ───────────────
+        theme_key = self.data.get("theme", "blue")
+        card_bg, card_border = _tag_colors(
+            theme_key, td.get("color"), t["card"], t["border"])
+
+        # 부모 캔버스 너비를 미리 계산 → 즉시 렌더
         parent_w = self.canvas.winfo_width()
         if parent_w <= 1:
             parent_w = self.data["window"]["width"]
-        card_w = max(100, parent_w - 16)   # padx=8 양쪽
+        card_w = max(100, parent_w - 16)
 
         # ── 카드 Canvas (둥근 모서리) ──────────
         cv = tk.Canvas(self.sf, bg=t["bg"], highlightthickness=0,
                        bd=0, height=52, width=card_w)
         cv.pack(fill="x", padx=8, pady=4)
 
-        row = tk.Frame(cv, bg=t["card"], pady=10)
+        row = tk.Frame(cv, bg=card_bg, pady=10)
         win_id = cv.create_window(PAD, PAD, window=row, anchor="nw",
                                   width=card_w - PAD * 2)
 
         def _redraw(e=None):
             cw = cv.winfo_width()
-            if cw <= 1: cw = card_w          # 미리 계산한 너비로 폴백
+            if cw <= 1: cw = card_w
             row.update_idletasks()
             ch = row.winfo_reqheight()
             if ch <= 1: cv.after(30, _redraw); return
             th = ch + PAD * 2
             cv.config(height=th)
             cv.itemconfig(win_id, width=cw - PAD * 2)
-            # 아이템 색상이 있으면 border를 해당 색으로
-            border_c = td.get("color") or t["border"]
-            _draw_rounded(cv, 0, 0, cw, th, CARD_R, t["card"], border_c)
+            _draw_rounded(cv, 0, 0, cw, th, CARD_R, card_bg, card_border)
             cv.tag_lower("card")
 
         cv.bind("<Configure>", lambda e: _redraw())
@@ -631,35 +693,36 @@ class TodoWidget:
         self._card_redraws.append(_redraw)
 
         # ── 드래그 핸들 ───────────────────────
-        dh = tk.Label(row, text="⠿", bg=t["card"], fg=t["muted"],
+        dh = tk.Label(row, text="⠿", bg=card_bg, fg=t["muted"],
                       font=(FONT, 11), cursor="fleur")
         dh.pack(side="left", padx=(8, 2))
         dh.bind("<ButtonPress-1>",   lambda e, r=row: self._item_drag_start(e, td, r))
         dh.bind("<B1-Motion>",       self._item_drag_move)
         dh.bind("<ButtonRelease-1>", self._item_drag_end)
 
-        # ── 색상 태그 도트 ────────────────────
-        dot_c = td.get("color") or t["border"]
-        dot = tk.Label(row, text="●", bg=t["card"], fg=dot_c,
-                       font=(FONT, 9), cursor="hand2")
-        dot.pack(side="left", padx=(1, 1))
-        dot.bind("<Button-1>", lambda e: self._cycle_color(td, dot, _redraw))
+        # ── 색상 태그 도트 (클릭 → 팝업) ──────
+        dot_c = td.get("color") or t["muted"]
+        dot_sym = "●" if td.get("color") else "○"
+        dot = tk.Label(row, text=dot_sym, bg=card_bg, fg=dot_c,
+                       font=(FONT, 10), cursor="hand2")
+        dot.pack(side="left", padx=(1, 2))
+        dot.bind("<Button-1>", lambda e: self._show_color_picker(td, dot, e))
 
         # ── 체크박스 ──────────────────────────
-        ck_color = t["accent"] if done else t["border"]
+        ck_color = t["accent"] if done else card_border
         ck_text  = "●" if done else "○"
-        chk = tk.Label(row, text=ck_text, bg=t["card"],
+        chk = tk.Label(row, text=ck_text, bg=card_bg,
                        fg=ck_color, font=(FONT, 14), cursor="hand2")
         chk.pack(side="left", padx=(2, 6))
         chk.bind("<Button-1>", lambda e: self.toggle(td))
 
         # ── 우측 버튼 (먼저 pack) ─────────────
-        del_lb = tk.Label(row, text="✕", bg=t["card"], fg=t["muted"],
+        del_lb = tk.Label(row, text="✕", bg=card_bg, fg=t["muted"],
                           font=(FONT, 9), cursor="hand2")
         del_lb.pack(side="right", padx=(0, 10))
         del_lb.bind("<Button-1>", lambda e: self.delete(td))
 
-        edt_lb = tk.Label(row, text="✎", bg=t["card"], fg=t["muted"],
+        edt_lb = tk.Label(row, text="✎", bg=card_bg, fg=t["muted"],
                           font=(FONT, 10), cursor="hand2")
         edt_lb.pack(side="right", padx=(0, 2))
         edt_lb.bind("<Button-1>", lambda e, r=row: self._inline_edit(td, r))
@@ -670,7 +733,7 @@ class TodoWidget:
         wl  = max(80, cw - 90)
         fg  = t["done_fg"] if done else t["fg"]
         fnt = (FONT, 10, "overstrike") if done else (FONT, 10)
-        lbl = tk.Label(row, text=td["text"], bg=t["card"], fg=fg,
+        lbl = tk.Label(row, text=td["text"], bg=card_bg, fg=fg,
                        font=fnt, anchor="w", cursor="hand2",
                        wraplength=wl, justify="left")
         lbl.pack(side="left", fill="x", expand=True, padx=(0, 4))
@@ -679,23 +742,29 @@ class TodoWidget:
         self._text_labels.append(lbl)
 
         self._bind_scroll_recursive(row)
-        self._drag_rows.append((row, cv, td))
+        self._drag_rows.append((row, cv, td, card_bg))
 
     def _inline_edit(self, td, row):
         for w in row.winfo_children(): w.destroy()
         t    = self.t
         done = td["done"]
+        theme_key = self.data.get("theme", "blue")
+        card_bg, card_border = _tag_colors(
+            theme_key, td.get("color"), t["card"], t["border"])
 
-        tk.Label(row, text="⠿", bg=t["card"], fg=t["muted"],
+        row.config(bg=card_bg)
+
+        tk.Label(row, text="⠿", bg=card_bg, fg=t["muted"],
                  font=(FONT, 11)).pack(side="left", padx=(8, 2))
 
-        # 색상 도트 (수정 모드에서도 표시 — static)
-        dot_c = td.get("color") or t["border"]
-        tk.Label(row, text="●", bg=t["card"], fg=dot_c,
-                 font=(FONT, 9)).pack(side="left", padx=(1, 1))
+        # 색상 도트 (수정 모드에서도 표시)
+        dot_c = td.get("color") or t["muted"]
+        dot_sym = "●" if td.get("color") else "○"
+        tk.Label(row, text=dot_sym, bg=card_bg, fg=dot_c,
+                 font=(FONT, 10)).pack(side="left", padx=(1, 2))
 
-        ck_color = t["accent"] if done else t["border"]
-        tk.Label(row, text="●" if done else "○", bg=t["card"],
+        ck_color = t["accent"] if done else card_border
+        tk.Label(row, text="●" if done else "○", bg=card_bg,
                  fg=ck_color, font=(FONT, 14)).pack(side="left", padx=(2, 6))
 
         var = tk.StringVar(value=td["text"])
@@ -707,21 +776,21 @@ class TodoWidget:
 
         def cancel(e=None): self.refresh()
 
-        cl = tk.Label(row, text="✗", bg=t["card"], fg="#EF4444",
+        cl = tk.Label(row, text="✗", bg=card_bg, fg="#EF4444",
                       font=(FONT, 12, "bold"), cursor="hand2")
         cl.pack(side="right", padx=(0, 10))
         cl.bind("<Button-1>", lambda e: cancel())
 
-        ok = tk.Label(row, text="✓", bg=t["card"], fg="#22C55E",
+        ok = tk.Label(row, text="✓", bg=card_bg, fg="#22C55E",
                       font=(FONT, 12, "bold"), cursor="hand2")
         ok.pack(side="right", padx=(0, 4))
         ok.bind("<Button-1>", lambda e: commit())
 
-        ent = tk.Entry(row, textvariable=var, bg=t["inp"], fg=t["fg"],
+        ent = tk.Entry(row, textvariable=var, bg=card_bg, fg=t["fg"],
                        insertbackground=t["fg"], relief="flat",
                        font=(FONT, 10), bd=0,
                        highlightthickness=1,
-                       highlightbackground=t["border"],
+                       highlightbackground=card_border,
                        highlightcolor=t["accent"])
         ent.pack(side="left", fill="x", expand=True, padx=4, ipady=4)
         ent.focus_set(); ent.select_range(0, "end")
@@ -737,8 +806,7 @@ class TodoWidget:
         self._drag_orig_idx = self.todos.index(td)
         t = self.t
         row.config(bg=t["drag"])
-        # card canvas border highlight
-        for i, (rw, cv, _) in enumerate(self._drag_rows):
+        for i, (rw, cv, *_) in enumerate(self._drag_rows):
             if rw is row:
                 _draw_rounded(cv, 0, 0, cv.winfo_width(), cv.winfo_height(),
                               CARD_R, t["drag"], t["accent"])
@@ -750,9 +818,8 @@ class TodoWidget:
         target = max(0, min(len(self._drag_rows) - 1,
                             self._drag_orig_idx + round(dy / 40)))
         t = self.t
-        for i, (rw, cv, _) in enumerate(self._drag_rows):
-            active = i == target
-            rw.config(bg=t["drag"] if active else t["card"])
+        for i, (rw, cv, td_i, bg_i) in enumerate(self._drag_rows):
+            rw.config(bg=t["drag"] if i == target else bg_i)
 
     def _item_drag_end(self, e):
         if not self._drag_td: return
@@ -761,10 +828,9 @@ class TodoWidget:
         target = max(0, min(len(self.todos) - 1, orig + round(dy / 40)))
         self._drag_td = None
         if target == orig:
-            # 위치 변화 없음 → 카드 색만 원복, refresh 불필요
             if orig < len(self._drag_rows):
-                row, cv, _ = self._drag_rows[orig]
-                row.config(bg=self.t["card"])
+                row, cv, _, bg_i = self._drag_rows[orig]
+                row.config(bg=bg_i)
                 self._card_redraws[orig]()
             return
         td = self.todos.pop(orig)
@@ -1083,16 +1149,21 @@ class ListWindow:
         done = td["done"]
         PAD  = 4
 
+        # 카드 배경 색상
+        theme_key = self.app.data.get("theme", "blue")
+        card_bg, card_border = _tag_colors(
+            theme_key, td.get("color"), t["card"], t["border"])
+
         # 부모 캔버스 너비 미리 계산
         parent_w = self.canvas.winfo_width()
         if parent_w <= 1:
             parent_w = 460
-        card_w = max(100, parent_w - 20)   # padx=10 양쪽
+        card_w = max(100, parent_w - 20)
 
         cv = tk.Canvas(self.sf, bg=t["bg"], highlightthickness=0,
                        bd=0, height=52, width=card_w)
         cv.pack(fill="x", padx=10, pady=4)
-        row = tk.Frame(cv, bg=t["card"], pady=10)
+        row = tk.Frame(cv, bg=card_bg, pady=10)
         win_id = cv.create_window(PAD, PAD, window=row, anchor="nw",
                                   width=card_w - PAD * 2)
 
@@ -1105,8 +1176,7 @@ class ListWindow:
             th = ch + PAD * 2
             cv.config(height=th)
             cv.itemconfig(win_id, width=cw - PAD * 2)
-            border_c = td.get("color") or t["border"]
-            _draw_rounded(cv, 0, 0, cw, th, CARD_R, t["card"], border_c)
+            _draw_rounded(cv, 0, 0, cw, th, CARD_R, card_bg, card_border)
             cv.tag_lower("card")
 
         cv.bind("<Configure>", lambda e: _redraw())
@@ -1115,14 +1185,15 @@ class ListWindow:
         scb = lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units")
         cv.bind("<MouseWheel>", scb)
 
-        # 색상 도트 (전체 목록창 — 클릭 불가, 시각적 표시만)
-        dot_c = td.get("color") or t["border"]
-        tk.Label(row, text="●", bg=t["card"], fg=dot_c,
-                 font=(FONT, 9)).pack(side="left", padx=(10, 2))
+        # 색상 도트 (전체 목록창 — 시각적 표시)
+        dot_c = td.get("color") or t["muted"]
+        dot_sym = "●" if td.get("color") else "○"
+        tk.Label(row, text=dot_sym, bg=card_bg, fg=dot_c,
+                 font=(FONT, 10)).pack(side="left", padx=(10, 2))
 
         # 체크박스
-        ck_color = t["accent"] if done else t["border"]
-        chk = tk.Label(row, text="●" if done else "○", bg=t["card"],
+        ck_color = t["accent"] if done else card_border
+        chk = tk.Label(row, text="●" if done else "○", bg=card_bg,
                        fg=ck_color, font=(FONT, 14), cursor="hand2")
         chk.pack(side="left", padx=(2, 6))
         chk.bind("<Button-1>", lambda e, td=td: self._toggle(td))
@@ -1135,22 +1206,22 @@ class ListWindow:
                 badge = "어제" if diff == 1 else f"{diff}일 전"
             except: badge = ""
             if badge:
-                tk.Label(row, text=badge, bg=t["card"], fg=t["muted"],
+                tk.Label(row, text=badge, bg=card_bg, fg=t["muted"],
                          font=(FONT, 7), width=6).pack(side="right", padx=(0, 4))
 
-        del_lb = tk.Label(row, text="✕", bg=t["card"], fg=t["muted"],
+        del_lb = tk.Label(row, text="✕", bg=card_bg, fg=t["muted"],
                           font=(FONT, 9), cursor="hand2")
         del_lb.pack(side="right", padx=(0, 10))
         del_lb.bind("<Button-1>", lambda e, td=td: self._delete(td))
 
-        edt_lb = tk.Label(row, text="✎", bg=t["card"], fg=t["muted"],
+        edt_lb = tk.Label(row, text="✎", bg=card_bg, fg=t["muted"],
                           font=(FONT, 10), cursor="hand2")
         edt_lb.pack(side="right", padx=(0, 2))
         edt_lb.bind("<Button-1>", lambda e, td=td, r=row: self._inline_edit(td, r))
 
         fg  = t["done_fg"] if done else t["fg"]
         fnt = (FONT, 10, "overstrike") if done else (FONT, 10)
-        lbl = tk.Label(row, text=td["text"], bg=t["card"], fg=fg,
+        lbl = tk.Label(row, text=td["text"], bg=card_bg, fg=fg,
                        font=fnt, anchor="w", cursor="hand2")
         lbl.pack(side="left", fill="x", expand=True, padx=(0, 4))
         lbl.bind("<Button-1>",        lambda e, td=td: self._toggle(td))
@@ -1164,9 +1235,13 @@ class ListWindow:
         for w in row.winfo_children(): w.destroy()
         t    = self.app.t
         done = td["done"]
+        theme_key = self.app.data.get("theme", "blue")
+        card_bg, card_border = _tag_colors(
+            theme_key, td.get("color"), t["card"], t["border"])
+        row.config(bg=card_bg)
 
-        ck_color = t["accent"] if done else t["border"]
-        tk.Label(row, text="●" if done else "○", bg=t["card"],
+        ck_color = t["accent"] if done else card_border
+        tk.Label(row, text="●" if done else "○", bg=card_bg,
                  fg=ck_color, font=(FONT, 14)).pack(side="left", padx=(10, 6))
 
         var = tk.StringVar(value=td["text"])
@@ -1178,20 +1253,20 @@ class ListWindow:
 
         def cancel(e=None): self.refresh()
 
-        cl = tk.Label(row, text="✗", bg=t["card"], fg="#EF4444",
+        cl = tk.Label(row, text="✗", bg=card_bg, fg="#EF4444",
                       font=(FONT, 12, "bold"), cursor="hand2")
         cl.pack(side="right", padx=(0, 10))
         cl.bind("<Button-1>", lambda e: cancel())
 
-        ok = tk.Label(row, text="✓", bg=t["card"], fg="#22C55E",
+        ok = tk.Label(row, text="✓", bg=card_bg, fg="#22C55E",
                       font=(FONT, 12, "bold"), cursor="hand2")
         ok.pack(side="right", padx=(0, 4))
         ok.bind("<Button-1>", lambda e: commit())
 
-        ent = tk.Entry(row, textvariable=var, bg=t["inp"], fg=t["fg"],
+        ent = tk.Entry(row, textvariable=var, bg=card_bg, fg=t["fg"],
                        insertbackground=t["fg"], relief="flat",
                        font=(FONT, 10), bd=0,
-                       highlightthickness=1, highlightbackground=t["border"],
+                       highlightthickness=1, highlightbackground=card_border,
                        highlightcolor=t["accent"])
         ent.pack(side="left", fill="x", expand=True, padx=6, ipady=4)
         ent.focus_set(); ent.select_range(0, "end")
