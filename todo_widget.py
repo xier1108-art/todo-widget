@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-할일 위젯 v1.6 — 모던 카드 UI
+할일 위젯 v1.8 — 아이템 색상 태그 + 테마 대비 개선
 의존성: pip install pystray Pillow
 빌드:  pyinstaller --onefile --noconsole --icon=icon.ico --name 할일위젯 todo_widget.py
 """
@@ -26,8 +26,17 @@ except ImportError:
 
 APP_NAME = "할일위젯"
 REG_KEY  = "TodoWidget"
-FONT     = "맑은 고딕"     # 한글 기본 모던 폰트 (Windows 7+, SIL OFL-free)
-CARD_R   = 16              # 카드 모서리 반경 (px)
+FONT        = "맑은 고딕"  # 한글 기본 모던 폰트 (Windows 7+, SIL OFL-free)
+CARD_R      = 16           # 카드 모서리 반경 (px)
+ITEM_COLORS = [            # 아이템 색상 태그 팔레트 (None = 기본)
+    None,
+    "#EF4444",  # 빨강 — 중요/긴급
+    "#F97316",  # 주황 — 높음
+    "#EAB308",  # 노랑 — 보통
+    "#22C55E",  # 초록 — 낮음
+    "#3B82F6",  # 파랑 — 정보
+    "#A855F7",  # 보라 — 기타
+]
 
 def _data_path():
     base = (os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)
@@ -42,67 +51,71 @@ DATA_PATH = _data_path()
 THEMES = {
     "blue": {
         "name": "블루 (기본)",
-        "bg":       "#EEF2F8",
-        "header":   "#1A56DB",
+        # 배경을 중간 채도 블루로 → 흰 카드와 명확한 대비
+        "bg":       "#B8CEED",
+        "header":   "#1848C8",
         "hdr_fg":   "#FFFFFF",
-        "fg":       "#111827",
-        "muted":    "#9CA3AF",
+        "fg":       "#0D1A30",
+        "muted":    "#5A7A9A",
         "card":     "#FFFFFF",
-        "border":   "#E2E8F0",
-        "accent":   "#1A56DB",
-        "done_fg":  "#D1D5DB",
+        "border":   "#92B0D0",
+        "accent":   "#1848C8",
+        "done_fg":  "#A8BDD0",
         "inp":      "#FFFFFF",
-        "btn":      "#1A56DB",
+        "btn":      "#1848C8",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#DBEAFE",
+        "drag":     "#D0E4F8",
     },
     "yellow": {
         "name": "노랑",
-        "bg":       "#FEFCE8",
-        "header":   "#D97706",
+        # 따뜻한 앰버 배경 → 아이보리 카드
+        "bg":       "#E8C870",
+        "header":   "#92400E",
         "hdr_fg":   "#FFFFFF",
-        "fg":       "#1C1917",
-        "muted":    "#A8A29E",
-        "card":     "#FFFFFF",
-        "border":   "#FDE68A",
-        "accent":   "#D97706",
-        "done_fg":  "#D6D3D1",
-        "inp":      "#FFFFFF",
-        "btn":      "#D97706",
+        "fg":       "#1C0E00",
+        "muted":    "#7A5818",
+        "card":     "#FFFEF0",
+        "border":   "#C09838",
+        "accent":   "#B45309",
+        "done_fg":  "#C0A860",
+        "inp":      "#FFFEF0",
+        "btn":      "#92400E",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#FEF3C7",
+        "drag":     "#F8E8A0",
     },
     "green": {
         "name": "초록",
-        "bg":       "#F0FDF4",
-        "header":   "#16A34A",
+        # 세이지 그린 배경 → 아이보리 카드
+        "bg":       "#90C8A4",
+        "header":   "#15803D",
         "hdr_fg":   "#FFFFFF",
-        "fg":       "#14532D",
-        "muted":    "#86EFAC",
-        "card":     "#FFFFFF",
-        "border":   "#BBF7D0",
-        "accent":   "#16A34A",
-        "done_fg":  "#D1FAE5",
-        "inp":      "#FFFFFF",
-        "btn":      "#16A34A",
+        "fg":       "#081808",
+        "muted":    "#386848",
+        "card":     "#F8FFF8",
+        "border":   "#60A878",
+        "accent":   "#15803D",
+        "done_fg":  "#80B890",
+        "inp":      "#F8FFF8",
+        "btn":      "#15803D",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#DCFCE7",
+        "drag":     "#B8E8C8",
     },
     "pink": {
         "name": "분홍",
-        "bg":       "#FFF1F2",
-        "header":   "#E11D48",
+        # 로즈 핑크 배경 → 라이트 핑크 카드
+        "bg":       "#ECAABB",
+        "header":   "#9F1239",
         "hdr_fg":   "#FFFFFF",
-        "fg":       "#4C0519",
-        "muted":    "#FDA4AF",
-        "card":     "#FFFFFF",
-        "border":   "#FECDD3",
+        "fg":       "#1A0008",
+        "muted":    "#7A3050",
+        "card":     "#FFF5F8",
+        "border":   "#C87890",
         "accent":   "#E11D48",
-        "done_fg":  "#FFE4E6",
-        "inp":      "#FFFFFF",
-        "btn":      "#E11D48",
+        "done_fg":  "#C898A8",
+        "inp":      "#FFF5F8",
+        "btn":      "#9F1239",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#FFE4E6",
+        "drag":     "#F8C8D8",
     },
     "dark": {
         "name": "다크",
@@ -527,6 +540,18 @@ class TodoWidget:
                     self.list_win.refresh()
             except: pass
 
+    def _cycle_color(self, td, dot_lbl, redraw_fn):
+        """아이템 색상 태그를 순환 (full refresh 없이 targeted update)."""
+        cur = td.get("color")
+        try:    idx = ITEM_COLORS.index(cur)
+        except: idx = 0
+        td["color"] = ITEM_COLORS[(idx + 1) % len(ITEM_COLORS)]
+        new_c = td["color"] or self.t["border"]
+        dot_lbl.config(fg=new_c)
+        redraw_fn()          # 카드 border만 다시 그림
+        self._do_save()
+        self._sync_list()
+
     # ──────────────────────────────────────────
     #  렌더링
     # ──────────────────────────────────────────
@@ -593,7 +618,9 @@ class TodoWidget:
             th = ch + PAD * 2
             cv.config(height=th)
             cv.itemconfig(win_id, width=cw - PAD * 2)
-            _draw_rounded(cv, 0, 0, cw, th, CARD_R, t["card"], t["border"])
+            # 아이템 색상이 있으면 border를 해당 색으로
+            border_c = td.get("color") or t["border"]
+            _draw_rounded(cv, 0, 0, cw, th, CARD_R, t["card"], border_c)
             cv.tag_lower("card")
 
         cv.bind("<Configure>", lambda e: _redraw())
@@ -610,6 +637,13 @@ class TodoWidget:
         dh.bind("<ButtonPress-1>",   lambda e, r=row: self._item_drag_start(e, td, r))
         dh.bind("<B1-Motion>",       self._item_drag_move)
         dh.bind("<ButtonRelease-1>", self._item_drag_end)
+
+        # ── 색상 태그 도트 ────────────────────
+        dot_c = td.get("color") or t["border"]
+        dot = tk.Label(row, text="●", bg=t["card"], fg=dot_c,
+                       font=(FONT, 9), cursor="hand2")
+        dot.pack(side="left", padx=(1, 1))
+        dot.bind("<Button-1>", lambda e: self._cycle_color(td, dot, _redraw))
 
         # ── 체크박스 ──────────────────────────
         ck_color = t["accent"] if done else t["border"]
@@ -654,6 +688,11 @@ class TodoWidget:
 
         tk.Label(row, text="⠿", bg=t["card"], fg=t["muted"],
                  font=(FONT, 11)).pack(side="left", padx=(8, 2))
+
+        # 색상 도트 (수정 모드에서도 표시 — static)
+        dot_c = td.get("color") or t["border"]
+        tk.Label(row, text="●", bg=t["card"], fg=dot_c,
+                 font=(FONT, 9)).pack(side="left", padx=(1, 1))
 
         ck_color = t["accent"] if done else t["border"]
         tk.Label(row, text="●" if done else "○", bg=t["card"],
@@ -720,9 +759,16 @@ class TodoWidget:
         dy     = e.y_root - self._drag_orig_y
         orig   = self._drag_orig_idx
         target = max(0, min(len(self.todos) - 1, orig + round(dy / 40)))
+        self._drag_td = None
+        if target == orig:
+            # 위치 변화 없음 → 카드 색만 원복, refresh 불필요
+            if orig < len(self._drag_rows):
+                row, cv, _ = self._drag_rows[orig]
+                row.config(bg=self.t["card"])
+                self._card_redraws[orig]()
+            return
         td = self.todos.pop(orig)
         self.todos.insert(target, td)
-        self._drag_td = None
         self._do_save(); self.refresh(); self._sync_list()
 
     # ──────────────────────────────────────────
@@ -1059,7 +1105,8 @@ class ListWindow:
             th = ch + PAD * 2
             cv.config(height=th)
             cv.itemconfig(win_id, width=cw - PAD * 2)
-            _draw_rounded(cv, 0, 0, cw, th, CARD_R, t["card"], t["border"])
+            border_c = td.get("color") or t["border"]
+            _draw_rounded(cv, 0, 0, cw, th, CARD_R, t["card"], border_c)
             cv.tag_lower("card")
 
         cv.bind("<Configure>", lambda e: _redraw())
@@ -1068,11 +1115,16 @@ class ListWindow:
         scb = lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units")
         cv.bind("<MouseWheel>", scb)
 
+        # 색상 도트 (전체 목록창 — 클릭 불가, 시각적 표시만)
+        dot_c = td.get("color") or t["border"]
+        tk.Label(row, text="●", bg=t["card"], fg=dot_c,
+                 font=(FONT, 9)).pack(side="left", padx=(10, 2))
+
         # 체크박스
         ck_color = t["accent"] if done else t["border"]
         chk = tk.Label(row, text="●" if done else "○", bg=t["card"],
                        fg=ck_color, font=(FONT, 14), cursor="hand2")
-        chk.pack(side="left", padx=(10, 6))
+        chk.pack(side="left", padx=(2, 6))
         chk.bind("<Button-1>", lambda e, td=td: self._toggle(td))
 
         # 날짜 뱃지
