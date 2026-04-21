@@ -49,11 +49,13 @@ _TAG_BG_DARK = {
     "#A855F7": ("#3B0764", "#6B21A8"),
 }
 
+_DARK_THEMES = {"midnight", "blue", "yellow", "green", "pink"}
+
 def _tag_colors(theme_key, item_color, default_bg, default_border):
     """태그 색상에 맞는 (card_bg, card_border) 반환."""
     if not item_color:
         return default_bg, default_border
-    palette = _TAG_BG_DARK if theme_key == "dark" else _TAG_BG_LIGHT
+    palette = _TAG_BG_DARK if theme_key in _DARK_THEMES else _TAG_BG_LIGHT
     bg, bd = palette.get(item_color, (default_bg, default_border))
     return bg, bd
 
@@ -68,95 +70,108 @@ DATA_PATH = _data_path()
 #  테마
 # ──────────────────────────────────────────────
 THEMES = {
-    "blue": {
-        "name": "블루 (기본)",
-        # 배경을 중간 채도 블루로 → 흰 카드와 명확한 대비
-        "bg":       "#B8CEED",
-        "header":   "#1848C8",
-        "hdr_fg":   "#FFFFFF",
-        "fg":       "#0D1A30",
-        "muted":    "#5A7A9A",
-        "card":     "#FFFFFF",
-        "border":   "#92B0D0",
-        "accent":   "#1848C8",
-        "done_fg":  "#A8BDD0",
-        "inp":      "#FFFFFF",
-        "btn":      "#1848C8",
+    "midnight": {
+        "name": "미드나잇 (기본)",
+        # GitHub Dark 스타일 — 딥 네이비 배경, 카드 분리감 최대
+        "bg":       "#0D1117",
+        "header":   "#161B22",
+        "hdr_fg":   "#E6EDF3",
+        "fg":       "#E6EDF3",
+        "muted":    "#8B949E",
+        "card":     "#161B22",
+        "border":   "#30363D",
+        "accent":   "#58A6FF",
+        "done_fg":  "#484F58",
+        "inp":      "#0D1117",
+        "btn":      "#238636",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#D0E4F8",
+        "drag":     "#1C2128",
+    },
+    "blue": {
+        "name": "블루",
+        "bg":       "#1E3A5F",
+        "header":   "#1248A8",
+        "hdr_fg":   "#FFFFFF",
+        "fg":       "#EFF6FF",
+        "muted":    "#93C5FD",
+        "card":     "#1E3A6E",
+        "border":   "#2563EB",
+        "accent":   "#60A5FA",
+        "done_fg":  "#4B6FA8",
+        "inp":      "#172B50",
+        "btn":      "#2563EB",
+        "btn_fg":   "#FFFFFF",
+        "drag":     "#2A4A80",
     },
     "yellow": {
         "name": "노랑",
-        # 따뜻한 앰버 배경 → 아이보리 카드
-        "bg":       "#E8C870",
-        "header":   "#92400E",
-        "hdr_fg":   "#FFFFFF",
-        "fg":       "#1C0E00",
-        "muted":    "#7A5818",
-        "card":     "#FFFEF0",
-        "border":   "#C09838",
-        "accent":   "#B45309",
-        "done_fg":  "#C0A860",
-        "inp":      "#FFFEF0",
-        "btn":      "#92400E",
-        "btn_fg":   "#FFFFFF",
-        "drag":     "#F8E8A0",
+        "bg":       "#2D1F00",
+        "header":   "#78350F",
+        "hdr_fg":   "#FEF9C3",
+        "fg":       "#FEF9C3",
+        "muted":    "#D97706",
+        "card":     "#362400",
+        "border":   "#92400E",
+        "accent":   "#FBBF24",
+        "done_fg":  "#6B4F10",
+        "inp":      "#2D1F00",
+        "btn":      "#D97706",
+        "btn_fg":   "#1C0F00",
+        "drag":     "#3D2B00",
     },
     "green": {
         "name": "초록",
-        # 세이지 그린 배경 → 아이보리 카드
-        "bg":       "#90C8A4",
-        "header":   "#15803D",
-        "hdr_fg":   "#FFFFFF",
-        "fg":       "#081808",
-        "muted":    "#386848",
-        "card":     "#F8FFF8",
-        "border":   "#60A878",
-        "accent":   "#15803D",
-        "done_fg":  "#80B890",
-        "inp":      "#F8FFF8",
-        "btn":      "#15803D",
+        "bg":       "#071A0E",
+        "header":   "#14532D",
+        "hdr_fg":   "#DCFCE7",
+        "fg":       "#DCFCE7",
+        "muted":    "#4ADE80",
+        "card":     "#0D2418",
+        "border":   "#166534",
+        "accent":   "#4ADE80",
+        "done_fg":  "#1A4030",
+        "inp":      "#071A0E",
+        "btn":      "#16A34A",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#B8E8C8",
+        "drag":     "#122E1E",
     },
     "pink": {
         "name": "분홍",
-        # 로즈 핑크 배경 → 라이트 핑크 카드
-        "bg":       "#ECAABB",
-        "header":   "#9F1239",
-        "hdr_fg":   "#FFFFFF",
-        "fg":       "#1A0008",
-        "muted":    "#7A3050",
-        "card":     "#FFF5F8",
-        "border":   "#C87890",
-        "accent":   "#E11D48",
-        "done_fg":  "#C898A8",
-        "inp":      "#FFF5F8",
-        "btn":      "#9F1239",
+        "bg":       "#1A0510",
+        "header":   "#881337",
+        "hdr_fg":   "#FFE4E6",
+        "fg":       "#FFE4E6",
+        "muted":    "#FB7185",
+        "card":     "#220810",
+        "border":   "#9F1239",
+        "accent":   "#FB7185",
+        "done_fg":  "#4A1528",
+        "inp":      "#1A0510",
+        "btn":      "#E11D48",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#F8C8D8",
+        "drag":     "#2A0C18",
     },
-    "dark": {
-        "name": "다크",
-        "bg":       "#0F172A",
-        "header":   "#1E293B",
-        "hdr_fg":   "#F1F5F9",
-        "fg":       "#F1F5F9",
-        "muted":    "#475569",
-        "card":     "#1E293B",
-        "border":   "#334155",
-        "accent":   "#3B82F6",
-        "done_fg":  "#334155",
-        "inp":      "#0F172A",
-        "btn":      "#3B82F6",
+    "light": {
+        "name": "라이트",
+        "bg":       "#F3F4F6",
+        "header":   "#FFFFFF",
+        "hdr_fg":   "#111827",
+        "fg":       "#111827",
+        "muted":    "#9CA3AF",
+        "card":     "#FFFFFF",
+        "border":   "#E5E7EB",
+        "accent":   "#6366F1",
+        "done_fg":  "#D1D5DB",
+        "inp":      "#F9FAFB",
+        "btn":      "#6366F1",
         "btn_fg":   "#FFFFFF",
-        "drag":     "#1E3A5F",
+        "drag":     "#EEF2FF",
     },
 }
 
 DEFAULT_DATA = {
-    "window":        {"x": 100, "y": 100, "width": 300, "height": 460},
-    "theme":         "blue",
+    "window":        {"x": 100, "y": 100, "width": 310, "height": 480},
+    "theme":         "midnight",
     "always_on_top": True,
     "opacity":       0.97,
     "startup":       False,
@@ -166,12 +181,12 @@ DEFAULT_DATA = {
 # ──────────────────────────────────────────────
 #  둥근 모서리 카드 그리기
 # ──────────────────────────────────────────────
-def _draw_rounded(canvas, x1, y1, x2, y2, r, fill, outline, tag="card"):
-    """Canvas 위에 둥근 직사각형을 그린다 (border + fill 2중 레이어)."""
+def _draw_rounded(canvas, x1, y1, x2, y2, r, fill, outline, tag="card", accent=None):
+    """Canvas 위에 둥근 직사각형을 그린다 (border + fill 2중 레이어).
+    accent: 왼쪽 수직 액센트 바 색상 (None이면 생략)"""
     canvas.delete(tag)
-    d = r * 2
     for color, (ox1, oy1, ox2, oy2), radius in [
-        (outline, (x1, y1, x2, y2), r),
+        (outline, (x1,   y1,   x2,   y2  ), r),
         (fill,    (x1+1, y1+1, x2-1, y2-1), max(1, r-1)),
     ]:
         rd = radius * 2
@@ -183,6 +198,11 @@ def _draw_rounded(canvas, x1, y1, x2, y2, r, fill, outline, tag="card"):
         canvas.create_arc(fx1,    fy2-rd, fx1+rd, fy2,    start=180, extent=90, style="pieslice", **kw)
         canvas.create_rectangle(fx1+radius, fy1, fx2-radius, fy2, **kw)
         canvas.create_rectangle(fx1, fy1+radius, fx2, fy2-radius, **kw)
+    # 왼쪽 컬러 액센트 바 (color tag 있을 때)
+    if accent:
+        bx = x1 + 5
+        canvas.create_line(bx, y1 + r + 1, bx, y2 - r - 1,
+                           fill=accent, width=4, capstyle="round", tags=tag)
 
 # ──────────────────────────────────────────────
 #  데이터 I/O
@@ -308,7 +328,7 @@ class TodoWidget:
 
     @property
     def t(self):
-        return THEMES.get(self.data.get("theme", "blue"), THEMES["blue"])
+        return THEMES.get(self.data.get("theme", "midnight"), THEMES["midnight"])
 
     def _apply_state(self):
         w = self.data["window"]
@@ -324,49 +344,57 @@ class TodoWidget:
     def _build(self):
         t = self.t
 
-        # ── 헤더 ──────────────────────────────
-        hdr = tk.Frame(self.root, bg=t["header"], height=50)
+        # ── 헤더 (미니멀 + 드래그 영역) ───────
+        hdr = tk.Frame(self.root, bg=t["header"], height=54)
         hdr.pack(fill="x"); hdr.pack_propagate(False)
-
         self.hdr = hdr
+
+        # 앱 타이틀 + 배지
         left = tk.Frame(hdr, bg=t["header"])
-        left.pack(side="left", padx=14, pady=0, fill="y")
+        left.pack(side="left", padx=14, fill="y")
 
+        tk.Label(left, text="✓", bg=t["header"], fg=t["accent"],
+                 font=(FONT, 13, "bold")).pack(side="left", padx=(0, 5))
         tk.Label(left, text="할 일", bg=t["header"], fg=t["hdr_fg"],
-                 font=(FONT, 13, "bold")).pack(side="left", pady=0)
+                 font=(FONT, 13, "bold")).pack(side="left")
+        self.badge_lbl = tk.Label(left, text="", bg=t["accent"], fg=t["btn_fg"],
+                                  font=(FONT, 7, "bold"), padx=5, pady=2)
 
-        self.badge_lbl = tk.Label(left, text="", bg=t["accent"], fg="#FFFFFF",
-                                  font=(FONT, 7, "bold"), padx=4, pady=1)
-
+        # 우측: 날짜 + 버튼
         right = tk.Frame(hdr, bg=t["header"])
-        right.pack(side="right", padx=8, fill="y")
+        right.pack(side="right", padx=10, fill="y")
 
         days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
         d = date.today()
-        tk.Label(right, text=d.strftime(f"%b %d, {days[d.weekday()]}"),
-                 bg=t["header"], fg=t["hdr_fg"],
-                 font=(FONT, 8), pady=0).pack(side="left", padx=(0, 8))
+        tk.Label(right, text=d.strftime(f"%b %d"),
+                 bg=t["header"], fg=t["muted"],
+                 font=(FONT, 8)).pack(side="left", padx=(0, 10))
 
-        for sym, cmd in [("─", self.hide),
-                         ("×", self.hide if TRAY_OK else self.quit_app)]:
-            lb = tk.Label(right, text=sym, bg=t["header"], fg=t["hdr_fg"],
-                          font=(FONT, 11), cursor="hand2", padx=4)
+        for sym, cmd in [("−", self.hide),
+                         ("✕", self.hide if TRAY_OK else self.quit_app)]:
+            lb = tk.Label(right, text=sym, bg=t["header"], fg=t["muted"],
+                          font=(FONT, 10), cursor="hand2", padx=5)
             lb.pack(side="left")
-            lb.bind("<Button-1>", lambda e, c=cmd: c())
+            lb.bind("<Button-1>",  lambda e, c=cmd: c())
+            lb.bind("<Enter>",     lambda e, w=lb: w.config(fg=t["hdr_fg"]))
+            lb.bind("<Leave>",     lambda e, w=lb: w.config(fg=t["muted"]))
 
         for w in (hdr, left):
             w.bind("<ButtonPress-1>", self._drag_start)
             w.bind("<B1-Motion>",     self._drag_move)
         hdr.bind("<Button-3>", lambda e: self._ctx_menu(e.x_root, e.y_root))
 
+        # ── 헤더 하단 구분선 ──────────────────
+        tk.Frame(self.root, bg=t["border"], height=1).pack(fill="x")
+
         # ── 스크롤 영역 ───────────────────────
         mid = tk.Frame(self.root, bg=t["bg"])
         mid.pack(fill="both", expand=True)
 
-        # 우측 리사이즈 핸들 (6px) — 내부 Canvas로 collapse 방지 + 이벤트 바인딩
-        r_edge = tk.Frame(mid, bg=t["header"], cursor="size_we")
+        # 우측 리사이즈 핸들 (6px)
+        r_edge = tk.Frame(mid, bg=t["bg"], cursor="size_we")
         r_edge.pack(side="right", fill="y")
-        r_cv = tk.Canvas(r_edge, bg=t["header"], width=6,
+        r_cv = tk.Canvas(r_edge, bg=t["bg"], width=6,
                          highlightthickness=0, bd=0, cursor="size_we")
         r_cv.pack(fill="both", expand=True)
         for w in (r_edge, r_cv):
@@ -374,7 +402,7 @@ class TodoWidget:
             w.bind("<B1-Motion>",       self._rs_r_move)
             w.bind("<ButtonRelease-1>", lambda e: self._do_save())
 
-        self.vsb = tk.Scrollbar(mid, orient="vertical", width=10,
+        self.vsb = tk.Scrollbar(mid, orient="vertical", width=6,
                                 troughcolor=t["bg"], bg=t["border"],
                                 activebackground=t["muted"], relief="flat", bd=0)
         self.vsb.pack(side="right", fill="y")
@@ -386,8 +414,6 @@ class TodoWidget:
 
         self.sf = tk.Frame(self.canvas, bg=t["bg"])
         self._sf_id = self.canvas.create_window((0, 0), window=self.sf, anchor="nw")
-
-        # scrollregion: sf Configure 이벤트 e.width/e.height 직접 사용 (bbox 오프셋 제거)
         self.sf.bind("<Configure>",
                      lambda e: self.canvas.configure(
                          scrollregion=(0, 0, e.width, e.height)))
@@ -395,52 +421,58 @@ class TodoWidget:
         self._bind_scroll(self.canvas)
         self._bind_scroll(self.sf)
 
-        # ── 상태바 ────────────────────────────
+        # ── 상태바 (인라인, 심플) ─────────────
         sb = tk.Frame(self.root, bg=t["bg"])
-        sb.pack(fill="x", padx=12, pady=(4, 2))
+        sb.pack(fill="x", padx=12, pady=(4, 0))
         self.stat_lbl = tk.Label(sb, text="", bg=t["bg"], fg=t["muted"],
                                  font=(FONT, 8))
         self.stat_lbl.pack(side="left")
-        for txt, cmd in [("완료 삭제", self.clear_done), ("전체 목록", self.open_list)]:
+        for txt, cmd in [("🗑 완료 삭제", self.clear_done), ("☰ 전체", self.open_list)]:
             lb = tk.Label(sb, text=txt, bg=t["bg"], fg=t["muted"],
                           font=(FONT, 8), cursor="hand2")
-            lb.pack(side="right", padx=6)
+            lb.pack(side="right", padx=4)
             lb.bind("<Button-1>", lambda e, c=cmd: c())
+            lb.bind("<Enter>",    lambda e, w=lb: w.config(fg=t["accent"]))
+            lb.bind("<Leave>",    lambda e, w=lb: w.config(fg=t["muted"]))
 
-        # 구분선
-        tk.Frame(self.root, bg=t["border"], height=1).pack(fill="x")
+        # ── 입력 영역 (pill 형태) ─────────────
+        inp_frame = tk.Frame(self.root, bg=t["bg"], pady=10)
+        inp_frame.pack(fill="x", padx=10, pady=(2, 0))
 
-        # ── 입력 영역 ─────────────────────────
-        inp = tk.Frame(self.root, bg=t["bg"], pady=8)
-        inp.pack(fill="x")
+        # pill 외곽 (border color)
+        pill_outer = tk.Frame(inp_frame, bg=t["border"],
+                              highlightthickness=0, bd=0)
+        pill_outer.pack(side="left", fill="x", expand=True)
+        # pill 내부 (input bg)
+        pill_inner = tk.Frame(pill_outer, bg=t["inp"], padx=12, pady=0)
+        pill_inner.pack(fill="x", padx=1, pady=1)
 
-        # 입력창 — rounded border 효과
-        eb = tk.Frame(inp, bg=t["border"])
-        eb.pack(side="left", fill="x", expand=True, padx=(10, 4))
-        ei = tk.Frame(eb, bg=t["inp"])
-        ei.pack(fill="x", padx=1, pady=1)
         self.entry_var = tk.StringVar()
-        self.entry = tk.Entry(ei, textvariable=self.entry_var,
+        self.entry = tk.Entry(pill_inner, textvariable=self.entry_var,
                               bg=t["inp"], fg=t["fg"],
-                              insertbackground=t["fg"],
-                              relief="flat", font=(FONT, 10), bd=0)
-        self.entry.pack(fill="x", ipady=7, padx=10)
+                              insertbackground=t["accent"],
+                              relief="flat", font=(FONT, 10), bd=0,
+                              highlightthickness=0)
+        self.entry.pack(fill="x", ipady=8)
         self.entry.bind("<Return>", lambda e: self.add_todo())
 
-        add_btn = tk.Label(inp, text="+", bg=t["btn"], fg=t["btn_fg"],
-                           font=(FONT, 16, "bold"), cursor="hand2",
-                           width=3, pady=3)
-        add_btn.pack(side="right", padx=(0, 10))
+        # + 버튼 (둥근 사각형)
+        add_btn = tk.Label(inp_frame, text="+", bg=t["btn"], fg=t["btn_fg"],
+                           font=(FONT, 15, "bold"), cursor="hand2",
+                           padx=10, pady=4)
+        add_btn.pack(side="right", padx=(6, 0))
         add_btn.bind("<Button-1>", lambda e: self.add_todo())
+        add_btn.bind("<Enter>",    lambda e: add_btn.config(bg=t["accent"]))
+        add_btn.bind("<Leave>",    lambda e: add_btn.config(bg=t["btn"]))
 
         # ── 하단 리사이즈 스트립 ──────────────
-        foot = tk.Frame(self.root, bg=t["header"], height=10,
+        foot = tk.Frame(self.root, bg=t["border"], height=8,
                         cursor="sb_v_double_arrow")
         foot.pack(fill="x")
         foot.pack_propagate(False)
 
-        grip = tk.Label(foot, text="◢", bg=t["header"], fg=t["hdr_fg"],
-                        font=(FONT, 7), cursor="size_nw_se")
+        grip = tk.Label(foot, text="⠿", bg=t["border"], fg=t["muted"],
+                        font=(FONT, 6), cursor="size_nw_se")
         grip.pack(side="right", padx=4)
         grip.bind("<ButtonPress-1>",   self._rs_corner_press)
         grip.bind("<B1-Motion>",       self._rs_corner_move)
@@ -673,6 +705,8 @@ class TodoWidget:
         win_id = cv.create_window(PAD, PAD, window=row, anchor="nw",
                                   width=card_w - PAD * 2)
 
+        item_accent = td.get("color")   # 왼쪽 액센트 바 색상
+
         def _redraw(e=None):
             cw = cv.winfo_width()
             if cw <= 1: cw = card_w
@@ -682,7 +716,8 @@ class TodoWidget:
             th = ch + PAD * 2
             cv.config(height=th)
             cv.itemconfig(win_id, width=cw - PAD * 2)
-            _draw_rounded(cv, 0, 0, cw, th, CARD_R, card_bg, card_border)
+            _draw_rounded(cv, 0, 0, cw, th, CARD_R, card_bg, card_border,
+                          accent=item_accent)
             cv.tag_lower("card")
 
         cv.bind("<Configure>", lambda e: _redraw())
@@ -1167,6 +1202,8 @@ class ListWindow:
         win_id = cv.create_window(PAD, PAD, window=row, anchor="nw",
                                   width=card_w - PAD * 2)
 
+        item_accent = td.get("color")
+
         def _redraw(e=None):
             cw = cv.winfo_width()
             if cw <= 1: cw = card_w
@@ -1176,7 +1213,8 @@ class ListWindow:
             th = ch + PAD * 2
             cv.config(height=th)
             cv.itemconfig(win_id, width=cw - PAD * 2)
-            _draw_rounded(cv, 0, 0, cw, th, CARD_R, card_bg, card_border)
+            _draw_rounded(cv, 0, 0, cw, th, CARD_R, card_bg, card_border,
+                          accent=item_accent)
             cv.tag_lower("card")
 
         cv.bind("<Configure>", lambda e: _redraw())
