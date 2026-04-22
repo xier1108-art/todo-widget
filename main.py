@@ -19,7 +19,7 @@ from PyQt6.QtGui import (
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.2.0"
+APP_VER    = "5.3.0"
 FONT       = "Noto Sans KR"
 SHADOW_PAD = 0
 RADIUS     = 12
@@ -1290,6 +1290,23 @@ class TodoWidget(QMainWindow):
         if self._dragging_id is None: return
         if self._ghost:
             self._ghost.move(gpos.x() + 12, gpos.y() - self._ghost.height() // 2)
+            # 타겟 카테고리 색상으로 ghost 테두리 업데이트
+            all_ws = self._all_item_widgets()
+            ins = self._calc_insert_idx(gpos)
+            if all_ws and 0 <= ins < len(all_ws):
+                hover_cat_id = all_ws[ins].item.get("cat")
+            elif all_ws:
+                hover_cat_id = all_ws[-1].item.get("cat")
+            else:
+                hover_cat_id = self._cat_at_gpos(gpos)
+            hover_cat = next((c for c in self.data.get("categories", [])
+                              if c["id"] == hover_cat_id), None)
+            t = THEMES.get(self.data["theme"], THEMES["midnight"])
+            border_color = hover_cat["color"] if hover_cat else t["accent"]
+            self._ghost.setStyleSheet(
+                f"QWidget{{background:{t['card']};border:1.5px solid {border_color};"
+                f"border-radius:7px;}}")
+
         insert_idx = self._calc_insert_idx(gpos)
         if insert_idx == self._drag_insert_at: return
         self._drag_insert_at = insert_idx
@@ -1302,32 +1319,51 @@ class TodoWidget(QMainWindow):
             self._ghost.close(); self._ghost.deleteLater(); self._ghost = None
         insert_idx = self._calc_insert_idx(gpos)
 
-        # 드래그 아이템과 타겟이 같은 카테고리인지 확인
         drag_item = next((x for x in self.data.get("todos", [])
                           if x["id"] == self._dragging_id), None)
         all_ws = self._all_item_widgets()
-        target_item_id = (all_ws[insert_idx].item["id"]
-                          if all_ws and 0 <= insert_idx < len(all_ws) else None)
-        target_item = next((x for x in self.data.get("todos", [])
-                            if x["id"] == target_item_id), None) if target_item_id else None
+        todos  = self.data.get("todos", [])
 
-        # 같은 카테고리 내에서만 이동
-        if (drag_item and target_item
-                and drag_item.get("cat") == target_item.get("cat")):
-            todos = self.data.get("todos", [])
+        if drag_item:
+            # 타겟 아이템과 카테고리 결정
+            if all_ws and 0 <= insert_idx < len(all_ws):
+                target_widget   = all_ws[insert_idx]
+                target_item_id  = target_widget.item["id"]
+                target_cat_id   = target_widget.item.get("cat")
+            else:
+                target_item_id  = None
+                # 아이템 없는 경우: 커서가 속한 카테고리 그룹으로
+                target_cat_id   = self._cat_at_gpos(gpos) or drag_item.get("cat")
+
             from_idx = next((i for i, x in enumerate(todos)
                              if x["id"] == self._dragging_id), None)
             to_idx   = next((i for i, x in enumerate(todos)
-                             if x["id"] == target_item_id), None)
-            if from_idx is not None and to_idx is not None and from_idx != to_idx:
+                             if x["id"] == target_item_id), None) if target_item_id else None
+
+            cat_changed = target_cat_id != drag_item.get("cat")
+            pos_changed = to_idx is not None and from_idx != to_idx
+
+            if from_idx is not None and (cat_changed or pos_changed or
+                                         (target_item_id is None and cat_changed)):
                 item = todos.pop(from_idx)
-                if to_idx > from_idx: to_idx -= 1
-                todos.insert(to_idx, item)
-                # order 재계산
-                cat_id = item.get("cat")
-                cat_tasks = [x for x in todos if x.get("cat") == cat_id]
-                for i, t_item in enumerate(cat_tasks):
-                    t_item["order"] = i
+                item["cat"] = target_cat_id  # 카테고리 변경 반영
+
+                if to_idx is not None:
+                    if to_idx > from_idx: to_idx -= 1
+                    todos.insert(to_idx, item)
+                else:
+                    # 해당 카테고리의 마지막 위치에 추가
+                    cat_idxs = [i for i, x in enumerate(todos)
+                                if x.get("cat") == target_cat_id]
+                    ins = cat_idxs[-1] + 1 if cat_idxs else len(todos)
+                    todos.insert(ins, item)
+
+                # 모든 카테고리 order 재계산
+                for cat in self.data.get("categories", []):
+                    cat_tasks = [x for x in todos if x.get("cat") == cat["id"]]
+                    for i, t in enumerate(cat_tasks):
+                        t["order"] = i
+
                 self.data["todos"] = todos
                 save_data(self.data)
 
@@ -1345,6 +1381,20 @@ class TodoWidget(QMainWindow):
             bot = w.mapToGlobal(r.bottomLeft())
             if gpos.y() < (top.y() + bot.y()) // 2: return i
         return len(ws)
+
+    def _cat_at_gpos(self, gpos: QPoint) -> str | None:
+        """마우스 위치가 속한 카테고리 그룹 ID 반환 (아이템이 없는 그룹 처리용)"""
+        for g in self._cat_groups:
+            top = g.mapToGlobal(g.rect().topLeft()).y()
+            bot = g.mapToGlobal(g.rect().bottomLeft()).y()
+            if top <= gpos.y() <= bot:
+                return g.cat["id"]
+        # 마지막 그룹 아래 → 마지막 카테고리
+        if self._cat_groups:
+            last = self._cat_groups[-1]
+            if gpos.y() > last.mapToGlobal(last.rect().bottomLeft()).y():
+                return last.cat["id"]
+        return None
 
     # ── 창 이동 ───────────────────────────────────────────────────────────────
     def _hdr_press(self, e):
