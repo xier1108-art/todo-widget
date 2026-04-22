@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""할일위젯 v4.2.0 — PyQt6 | 드래그 정렬 · 색상 설정 · 헤더 우클릭 · 백업/복원"""
+"""할일위젯 v4.3.0 — PyQt6 | 드래그 정렬 · 색상 설정 · 헤더 우클릭 · 백업/복원"""
 
 import sys
 import json
@@ -22,7 +22,7 @@ from PyQt6.QtGui import (
 
 # ── 상수 ───────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "4.1.0"
+APP_VER    = "4.3.0"
 FONT       = "맑은 고딕"
 SHADOW_PAD = 14
 RADIUS     = 8
@@ -72,9 +72,25 @@ THEME_NAMES = {
 }
 ITEM_COLORS = [
     None,
-    "#FF6B6B", "#FFB347", "#FFD93D", "#6BCB77",
-    "#4D96FF", "#C77DFF", "#FF8FAB",
+    "#EF9A9A",  # 연빨강
+    "#FFCC80",  # 연주황
+    "#FFF59D",  # 연노랑
+    "#A5D6A7",  # 연초록
+    "#90CAF9",  # 연파랑
+    "#CE93D8",  # 연보라
+    "#F48FB1",  # 연분홍
 ]
+
+def blend_hex(base: str, over: str, alpha: float) -> str:
+    """over 색을 alpha 농도로 base에 블렌드해 HEX 반환"""
+    def p(h):
+        h = h.lstrip('#')
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    br, bg_, bb = p(base); or_, og, ob = p(over)
+    r = int(br * (1 - alpha) + or_ * alpha)
+    g = int(bg_ * (1 - alpha) + og * alpha)
+    b = int(bb * (1 - alpha) + ob * alpha)
+    return f"#{r:02X}{g:02X}{b:02X}"
 DEFAULT_DATA = {
     "window":       {"x": 100, "y": 100, "width": 320, "height": 520},
     "theme":        "yellow",
@@ -173,29 +189,33 @@ def make_tray_icon(accent: str = "#58A6FF") -> QIcon:
 class ColorPicker(QWidget):
     colorSelected = pyqtSignal(object)
 
-    def __init__(self, parent=None):
+    def __init__(self, theme: dict, parent=None):
         super().__init__(parent,
                          Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        t = theme
         wrap = QHBoxLayout(self); wrap.setContentsMargins(0, 0, 0, 0)
         box  = QWidget(); box.setObjectName("cpBox"); wrap.addWidget(box)
         row  = QHBoxLayout(box); row.setContentsMargins(8, 8, 8, 8); row.setSpacing(6)
         for c in ITEM_COLORS:
-            btn = QPushButton(); btn.setFixedSize(24, 24)
+            btn = QPushButton(); btn.setFixedSize(22, 22)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             if c is None:
-                btn.setStyleSheet("""QPushButton{background:#fff;border-radius:12px;
-                    border:2px solid #ccc;color:#aaa;font-size:10px;}
-                    QPushButton:hover{border-color:#888;}""")
+                btn.setStyleSheet(
+                    f"QPushButton{{background:{t['card']};border-radius:11px;"
+                    f"border:2px solid {t['border']};color:{t['muted']};font-size:9px;}}"
+                    f"QPushButton:hover{{border-color:{t['accent']};}}")
                 btn.setText("✕")
             else:
-                btn.setStyleSheet(f"""QPushButton{{background:{c};border-radius:12px;
-                    border:2px solid transparent;}}
-                    QPushButton:hover{{border-color:white;}}""")
+                btn.setStyleSheet(
+                    f"QPushButton{{background:{c};border-radius:11px;"
+                    f"border:2px solid transparent;}}"
+                    f"QPushButton:hover{{border-color:{t['accent']};}}")
             btn.clicked.connect(lambda _, col=c: self._pick(col))
             row.addWidget(btn)
-        box.setStyleSheet("""QWidget#cpBox{background:#2D2D2D;
-            border-radius:10px;border:1px solid #444;}""")
+        box.setStyleSheet(
+            f"QWidget#cpBox{{background:{t['card']};border-radius:10px;"
+            f"border:1px solid {t['border']};}}")
 
     def _pick(self, c):
         self.colorSelected.emit(c); self.close()
@@ -345,7 +365,7 @@ class TodoItemWidget(QWidget):
             )
 
     def _on_color_click(self):
-        picker = ColorPicker(self)
+        picker = ColorPicker(self.t, self)
         picker.colorSelected.connect(
             lambda c: self.sig_color.emit(self.item["id"], c))
         gpos = self.color_btn.mapToGlobal(
@@ -404,7 +424,12 @@ class TodoItemWidget(QWidget):
     def _style(self, hovered: bool):
         t    = self.t
         done = self.item.get("done", False)
-        bg   = t["card"] if hovered else t["bg"]
+        c    = self.item.get("color")
+        if c:
+            # 색상이 있으면 테마 배경에 은은하게 블렌드
+            bg = blend_hex(t["bg"], c, 0.32 if hovered else 0.20)
+        else:
+            bg = t["card"] if hovered else t["bg"]
         self.setAutoFillBackground(True)
         pal = self.palette()
         pal.setColor(QPalette.ColorRole.Window, QColor(bg))
