@@ -19,9 +19,9 @@ from PyQt6.QtGui import (
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.0.0"
+APP_VER    = "5.1.0"
 FONT       = "맑은 고딕"
-SHADOW_PAD = 14
+SHADOW_PAD = 6
 RADIUS     = 12
 
 if getattr(sys, "frozen", False):
@@ -444,6 +444,7 @@ class TodoItemWidget(QWidget):
         self._editing  = False
         self._drag_above = False
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self.setObjectName("todoItem")
         self._build()
 
     def _build(self):
@@ -572,13 +573,12 @@ class TodoItemWidget(QWidget):
 
     # ── 스타일 ───────────────────────────────────────────────────────────────
     def _style(self, hovered: bool):
-        t  = self.t
-        bg = "rgba(255,255,255,0.03)" if hovered else "transparent"
-        self.setAutoFillBackground(True)
-        pal = self.palette()
-        pal.setColor(QPalette.ColorRole.Window,
-                     QColor(bg) if hovered else QColor(0, 0, 0, 0))
-        self.setPalette(pal)
+        if hovered:
+            self.setStyleSheet(
+                "QWidget#todoItem{background:rgba(255,255,255,0.03);"
+                "border-radius:7px;}")
+        else:
+            self.setStyleSheet("QWidget#todoItem{background:transparent;}")
 
     def enterEvent(self, e):
         self._style(True)
@@ -642,8 +642,8 @@ class CategoryGroupWidget(QWidget):
 
         self._chevron = QLabel("▾" if not collapsed else "▸")
         self._chevron.setStyleSheet(
-            f"color:#444444;font-size:10px;background:transparent;")
-        self._chevron.setFixedWidth(12)
+            f"color:#555555;font-size:12px;background:transparent;")
+        self._chevron.setFixedWidth(14)
         hl.addWidget(self._chevron)
 
         dot = ColorDotWidget(cc, 8)
@@ -651,7 +651,7 @@ class CategoryGroupWidget(QWidget):
 
         name_lbl = QLabel(self.cat["label"])
         name_lbl.setStyleSheet(
-            f"color:{cc};font-family:'{FONT}';font-size:11px;"
+            f"color:{cc};font-family:'{FONT}';font-size:12px;"
             f"font-weight:bold;background:transparent;letter-spacing:0.2px;")
         hl.addWidget(name_lbl, 1)
 
@@ -699,7 +699,7 @@ class CategoryGroupWidget(QWidget):
         # ── 아이템 목록 ──────────────────────────────────────────────────────
         self._content = QWidget(); self._content.setStyleSheet("background:transparent;")
         cl = QVBoxLayout(self._content)
-        cl.setContentsMargins(0, 0, 0, 0); cl.setSpacing(0)
+        cl.setContentsMargins(8, 0, 8, 2); cl.setSpacing(1)
 
         if not tasks:
             empty = QLabel("할 일 없음")
@@ -723,6 +723,8 @@ class CategoryGroupWidget(QWidget):
     def set_collapsed(self, collapsed: bool):
         self._content.setVisible(not collapsed)
         self._chevron.setText("▸" if collapsed else "▾")
+        self._chevron.setStyleSheet(
+            f"color:#555555;font-size:12px;background:transparent;")
 
     def update_count(self, n: int):
         self._count_lbl.setText(str(n))
@@ -775,8 +777,8 @@ class TodoWidget(QMainWindow):
 
         self.inner = QWidget(); self.inner.setObjectName("innerWidget")
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(32); shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 165))
+        shadow.setBlurRadius(20); shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 180))
         self.inner.setGraphicsEffect(shadow)
         ol.addWidget(self.inner)
 
