@@ -502,13 +502,25 @@ class TodoItemWidget(QWidget):
         t = self.t
         p.setPen(QColor(t["border"]))
         p.drawLine(0, self.height()-1, self.width(), self.height()-1)
-        # 드래그 인디케이터
+        # 드래그 삽입선 인디케이터
         if getattr(self, "_drag_above", False):
-            p.setPen(QPen(QColor(t["accent"]), 2))
-            p.drawLine(0, 0, self.width(), 0)
+            pen = QPen(QColor(t["accent"]), 2, Qt.PenStyle.SolidLine,
+                       Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.drawLine(4, 1, self.width() - 4, 1)
+            # 양 끝 동그라미
+            p.setBrush(QColor(t["accent"])); p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(0, -3, 7, 7)
+            p.drawEllipse(self.width() - 7, -3, 7, 7)
         if getattr(self, "_drag_below", False):
-            p.setPen(QPen(QColor(t["accent"]), 2))
-            p.drawLine(0, self.height()-1, self.width(), self.height()-1)
+            pen = QPen(QColor(t["accent"]), 2, Qt.PenStyle.SolidLine,
+                       Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            y = self.height() - 1
+            p.drawLine(4, y, self.width() - 4, y)
+            p.setBrush(QColor(t["accent"])); p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(0, y - 3, 7, 7)
+            p.drawEllipse(self.width() - 7, y - 3, 7, 7)
         p.end()
 
 
@@ -523,6 +535,7 @@ class TodoWidget(QMainWindow):
         self._dragging_id    = None
         self._drag_insert_at = None   # 삽입할 인덱스
         self._drag_filter    = None
+        self._ghost: QWidget | None = None
 
         self._set_win_flags()
         self._build_ui()
@@ -902,20 +915,72 @@ class TodoWidget(QMainWindow):
         save_data(self.data); self.render_todos()
 
     # ── 드래그 정렬 ────────────────────────────────────────────────────────────
+    def _make_ghost(self, item_id: int) -> QWidget:
+        """드래그 중 커서를 따라다니는 고스트 박스 생성"""
+        item = next((x for x in self.data.get("todos", [])
+                     if x["id"] == item_id), None)
+        if not item: return None
+        t  = THEMES.get(self.data["theme"], THEMES["yellow"])
+        c  = item.get("color")
+        bg = blend_hex(t["bg"], c, 0.28) if c else t["card"]
+        fs = self.data.get("font_size", 10)
+
+        ghost = QWidget(None,
+                        Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        ghost.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        ghost.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        ghost.setWindowOpacity(0.82)
+
+        lay = QHBoxLayout(ghost)
+        lay.setContentsMargins(10, 6, 10, 6)
+        lay.setSpacing(8)
+
+        # 컬러 바
+        bar = QWidget(); bar.setFixedWidth(3)
+        bar.setStyleSheet(f"background:{c};border-radius:1px;" if c
+                          else "background:transparent;")
+        lay.addWidget(bar)
+
+        # 텍스트 (말줄임)
+        lbl = QLabel(item["text"])
+        lbl.setStyleSheet(
+            f"color:{t['fg']};font-family:'{FONT}';font-size:{fs}px;"
+            f"background:transparent;")
+        lbl.setMaximumWidth(self.list_container.width() - 60)
+        lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        lay.addWidget(lbl, 1)
+
+        ghost.setStyleSheet(
+            f"QWidget{{background:{bg};border:1.5px solid {t['accent']};"
+            f"border-radius:6px;}}")
+        ghost.setFixedWidth(self.list_container.width())
+        ghost.adjustSize()
+        return ghost
+
     def _drag_start(self, item_id: int, global_pos: QPoint):
         self._dragging_id    = item_id
         self._drag_insert_at = None
+        # 고스트 박스 생성
+        self._ghost = self._make_ghost(item_id)
+        if self._ghost:
+            self._ghost.move(global_pos.x() + 12,
+                             global_pos.y() - self._ghost.height() // 2)
+            self._ghost.show()
         # 전역 이벤트 필터 설치
         self._drag_filter = DragFilter(self)
         QApplication.instance().installEventFilter(self._drag_filter)
 
     def _drag_update(self, global_pos: QPoint):
         if self._dragging_id is None: return
+        # 고스트 박스 이동
+        if self._ghost:
+            self._ghost.move(global_pos.x() + 12,
+                             global_pos.y() - self._ghost.height() // 2)
         # 커서가 어느 아이템 위에 있는지 계산
         insert_idx = self._calc_insert_idx(global_pos)
         if insert_idx == self._drag_insert_at: return
         self._drag_insert_at = insert_idx
-        # 시각적 인디케이터 갱신
+        # 삽입선 인디케이터 갱신
         for i, w in enumerate(self._item_widgets):
             w._drag_above = (i == insert_idx)
             w._drag_below = False
@@ -923,6 +988,9 @@ class TodoWidget(QMainWindow):
 
     def _drag_end(self, global_pos: QPoint):
         if self._dragging_id is None: return
+        # 고스트 박스 제거
+        if self._ghost:
+            self._ghost.close(); self._ghost.deleteLater(); self._ghost = None
         insert_idx = self._calc_insert_idx(global_pos)
         # 현재 아이템 인덱스
         todos     = self.data.get("todos", [])
