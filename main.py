@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""할일위젯 v5.0.0 — PyQt6 | 카테고리 그룹 · 접기/펼치기 · 드래그 정렬"""
+"""할일위젯 v5.2.0 — PyQt6 | 카테고리 그룹 · 접기/펼치기 · 드래그 정렬"""
 
 import sys, json, winreg
 from datetime import date
@@ -12,16 +12,16 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon, QMenu, QGraphicsDropShadowEffect, QSizePolicy,
     QSizeGrip, QFileDialog, QMessageBox, QDialog, QComboBox, QGridLayout,
 )
-from PyQt6.QtCore import Qt, QPoint, QEvent, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QPointF, QEvent, QObject, pyqtSignal
 from PyQt6.QtGui import (
-    QColor, QFont, QIcon, QPixmap, QPainter, QPen, QAction, QPalette,
+    QColor, QFont, QFontDatabase, QIcon, QPixmap, QPainter, QPen, QAction, QPalette,
 )
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.1.0"
-FONT       = "맑은 고딕"
-SHADOW_PAD = 6
+APP_VER    = "5.2.0"
+FONT       = "Noto Sans KR"
+SHADOW_PAD = 0
 RADIUS     = 12
 
 if getattr(sys, "frozen", False):
@@ -302,6 +302,34 @@ class ColorDotWidget(QWidget):
         p.setBrush(QColor(self._color)); p.setPen(Qt.PenStyle.NoPen)
         off = (self.width() - self._size) // 2
         p.drawEllipse(off, off, self._size, self._size)
+        p.end()
+
+
+# ── 타이틀 아이콘 (파란 박스 + SVG 체크마크) ──────────────────────────────────
+class TitleIconWidget(QWidget):
+    """헤더 좌상단 20×20 파란 박스 안에 흰색 체크마크 그림"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(20, 20)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # 파란 둥근 박스
+        p.setBrush(QColor("#3b82f6"))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(0, 0, 20, 20, 6, 6)
+        # 흰색 체크마크 — SVG path M1.5 5.5 L4.5 8.5 L9.5 2.5 (11×11 뷰박스 → 20×20)
+        scale = 20 / 11
+        pen = QPen(QColor("white"), 1.8 * scale,
+                   Qt.PenStyle.SolidLine,
+                   Qt.PenCapStyle.RoundCap,
+                   Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.drawLine(QPointF(1.5 * scale, 5.5 * scale),
+                   QPointF(4.5 * scale, 8.5 * scale))
+        p.drawLine(QPointF(4.5 * scale, 8.5 * scale),
+                   QPointF(9.5 * scale, 2.5 * scale))
         p.end()
 
 
@@ -776,10 +804,6 @@ class TodoWidget(QMainWindow):
         ol.setContentsMargins(SHADOW_PAD, SHADOW_PAD, SHADOW_PAD, SHADOW_PAD)
 
         self.inner = QWidget(); self.inner.setObjectName("innerWidget")
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20); shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 180))
-        self.inner.setGraphicsEffect(shadow)
         ol.addWidget(self.inner)
 
         il = QVBoxLayout(self.inner)
@@ -805,14 +829,8 @@ class TodoWidget(QMainWindow):
         hdr = QWidget(); hdr.setObjectName("header"); hdr.setFixedHeight(44)
         lay = QHBoxLayout(hdr); lay.setContentsMargins(14, 0, 14, 0); lay.setSpacing(0)
 
-        # 타이틀 아이콘 (파란 박스 + 체크)
-        icon_box = QWidget(); icon_box.setFixedSize(20, 20)
-        icon_box.setStyleSheet("background:#3b82f6;border-radius:6px;")
-        ib_lay = QHBoxLayout(icon_box); ib_lay.setContentsMargins(0, 0, 0, 0)
-        chk = QLabel("✓"); chk.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        chk.setStyleSheet("color:white;font-size:11px;font-weight:bold;background:transparent;")
-        ib_lay.addWidget(chk)
-        lay.addWidget(icon_box); lay.addSpacing(8)
+        # 타이틀 아이콘 (파란 박스 + SVG 체크마크)
+        lay.addWidget(TitleIconWidget()); lay.addSpacing(8)
 
         title = QLabel("할 일"); title.setObjectName("hdrTitle")
         lay.addWidget(title); lay.addSpacing(7)
@@ -1420,7 +1438,11 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
-    app.setFont(QFont(FONT, 10))
+    # Noto Sans KR 우선, 없으면 맑은 고딕 / Segoe UI 폴백
+    available = QFontDatabase.families()
+    chosen = next((f for f in ["Noto Sans KR", "맑은 고딕", "Segoe UI"]
+                   if f in available), FONT)
+    app.setFont(QFont(chosen, 10))
     widget = TodoWidget()
     widget.show()
     sys.exit(app.exec())
