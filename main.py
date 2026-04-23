@@ -19,7 +19,7 @@ from PyQt6.QtGui import (
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.3.0"
+APP_VER    = "5.4.0"
 FONT       = "Noto Sans KR"
 SHADOW_PAD = 0
 RADIUS     = 12
@@ -441,7 +441,7 @@ class CategoryModal(QDialog):
         return self._result
 
 
-# ── 드래그 전역 이벤트 필터 ────────────────────────────────────────────────────
+# ── 드래그 전역 이벤트 필터 (할일 아이템용) ────────────────────────────────────
 class DragFilter(QObject):
     def __init__(self, widget):
         super().__init__(widget); self._w = widget
@@ -451,6 +451,20 @@ class DragFilter(QObject):
             self._w._drag_update(event.globalPosition().toPoint()); return True
         if event.type() == QEvent.Type.MouseButtonRelease:
             self._w._drag_end(event.globalPosition().toPoint())
+            QApplication.instance().removeEventFilter(self); return True
+        return False
+
+
+# ── 드래그 전역 이벤트 필터 (카테고리용) ───────────────────────────────────────
+class CatDragFilter(QObject):
+    def __init__(self, widget):
+        super().__init__(widget); self._w = widget
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseMove:
+            self._w._cat_drag_update(event.globalPosition().toPoint()); return True
+        if event.type() == QEvent.Type.MouseButtonRelease:
+            self._w._cat_drag_end(event.globalPosition().toPoint())
             QApplication.instance().removeEventFilter(self); return True
         return False
 
@@ -641,19 +655,21 @@ class TodoItemWidget(QWidget):
 
 # ── 카테고리 그룹 위젯 ─────────────────────────────────────────────────────────
 class CategoryGroupWidget(QWidget):
-    sig_toggle_cat  = pyqtSignal(str)          # cat_id
-    sig_edit_cat    = pyqtSignal(str)          # cat_id
-    sig_delete_cat  = pyqtSignal(str)          # cat_id
-    sig_toggle_task = pyqtSignal(int)
-    sig_delete_task = pyqtSignal(int)
-    sig_edit_task   = pyqtSignal(int, str)
-    sig_drag_start  = pyqtSignal(int, QPoint)  # task_id, global_pos
+    sig_toggle_cat    = pyqtSignal(str)          # cat_id
+    sig_edit_cat      = pyqtSignal(str)          # cat_id
+    sig_delete_cat    = pyqtSignal(str)          # cat_id
+    sig_toggle_task   = pyqtSignal(int)
+    sig_delete_task   = pyqtSignal(int)
+    sig_edit_task     = pyqtSignal(int, str)
+    sig_drag_start    = pyqtSignal(int, QPoint)  # task_id, global_pos
+    sig_cat_drag_start = pyqtSignal(str, QPoint) # cat_id, global_pos
 
     def __init__(self, cat: dict, tasks: list, theme: dict,
                  collapsed: bool, font_size: int = 13, parent=None):
         super().__init__(parent)
         self.cat = cat; self.t = theme
         self._item_widgets: list[TodoItemWidget] = []
+        self._cat_drag_above = False
         self._build(tasks, collapsed, font_size)
 
     def _build(self, tasks: list, collapsed: bool, font_size: int):
@@ -714,9 +730,26 @@ class CategoryGroupWidget(QWidget):
         al.addWidget(del_cat_btn)
         hl.addWidget(self._action_wrap)
 
-        self._hdr.mousePressEvent = lambda _: self.sig_toggle_cat.emit(self.cat["id"])
-        self._hdr.enterEvent  = lambda _: self._action_wrap.setVisible(True)
-        self._hdr.leaveEvent  = lambda _: self._action_wrap.setVisible(False)
+        # 카테고리 드래그 핸들 (헤더 맨 앞, hover 시 표시)
+        self._cat_drag_hdl = DotGridWidget("#555555")
+        self._cat_drag_hdl.setVisible(False)
+        self._cat_drag_hdl.setCursor(Qt.CursorShape.SizeVerCursor)
+        def _on_cat_drag_press(e):
+            if e.button() == Qt.MouseButton.LeftButton:
+                self.sig_cat_drag_start.emit(self.cat["id"],
+                                             e.globalPosition().toPoint())
+        self._cat_drag_hdl.mousePressEvent = _on_cat_drag_press
+        hl.insertWidget(0, self._cat_drag_hdl)
+
+        def _hdr_mouse_press(e):
+            # 핸들 영역이 아닐 때만 접기/펼치기
+            if not self._cat_drag_hdl.geometry().contains(e.pos()):
+                self.sig_toggle_cat.emit(self.cat["id"])
+        self._hdr.mousePressEvent = _hdr_mouse_press
+        self._hdr.enterEvent  = lambda _: (self._action_wrap.setVisible(True),
+                                            self._cat_drag_hdl.setVisible(True))
+        self._hdr.leaveEvent  = lambda _: (self._action_wrap.setVisible(False),
+                                            self._cat_drag_hdl.setVisible(False))
         root.addWidget(self._hdr)
 
         # 구분선
@@ -757,6 +790,19 @@ class CategoryGroupWidget(QWidget):
     def update_count(self, n: int):
         self._count_lbl.setText(str(n))
 
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if self._cat_drag_above:
+            p = QPainter(self)
+            pen = QPen(QColor(self.t["accent"]), 2, Qt.PenStyle.SolidLine,
+                       Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.drawLine(4, 1, self.width() - 4, 1)
+            p.setBrush(QColor(self.t["accent"])); p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(0, -3, 7, 7)
+            p.drawEllipse(self.width() - 7, -3, 7, 7)
+            p.end()
+
 
 # ── 메인 윈도우 ────────────────────────────────────────────────────────────────
 class TodoWidget(QMainWindow):
@@ -765,10 +811,16 @@ class TodoWidget(QMainWindow):
         self.data = load_data()
         self._drag_pos   = None
         self._cat_groups: list[CategoryGroupWidget] = []
+        # 할일 아이템 드래그 상태
         self._dragging_id    = None
         self._drag_insert_at = None
         self._drag_filter    = None
         self._ghost: QWidget | None = None
+        # 카테고리 드래그 상태
+        self._dragging_cat_id    = None
+        self._cat_drag_insert_at = None
+        self._cat_drag_filter    = None
+        self._cat_ghost: QWidget | None = None
 
         self._set_win_flags()
         self._build_ui()
@@ -1124,6 +1176,7 @@ class TodoWidget(QMainWindow):
             g.sig_delete_task.connect(self.delete_item)
             g.sig_edit_task.connect(self.edit_item)
             g.sig_drag_start.connect(self._drag_start)
+            g.sig_cat_drag_start.connect(self._cat_drag_start)
             self._list_lay.addWidget(g)
             self._cat_groups.append(g)
 
@@ -1381,6 +1434,97 @@ class TodoWidget(QMainWindow):
             bot = w.mapToGlobal(r.bottomLeft())
             if gpos.y() < (top.y() + bot.y()) // 2: return i
         return len(ws)
+
+    # ── 카테고리 드래그 정렬 ──────────────────────────────────────────────────────
+    def _make_cat_ghost(self, cat_id: str) -> QWidget | None:
+        cat = next((c for c in self.data.get("categories", [])
+                    if c["id"] == cat_id), None)
+        if not cat: return None
+        t = THEMES.get(self.data["theme"], THEMES["midnight"])
+
+        ghost = QWidget(None, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        ghost.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        ghost.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        ghost.setWindowOpacity(0.82)
+
+        lay = QHBoxLayout(ghost)
+        lay.setContentsMargins(10, 7, 12, 7); lay.setSpacing(8)
+
+        dot = ColorDotWidget(cat["color"], 8)
+        lay.addWidget(dot)
+
+        lbl = QLabel(cat["label"])
+        lbl.setStyleSheet(
+            f"color:{cat['color']};font-family:'{FONT}';font-size:12px;"
+            f"font-weight:bold;background:transparent;")
+        lay.addWidget(lbl)
+
+        cnt_tasks = sum(1 for x in self.data.get("todos", [])
+                        if x.get("cat") == cat_id)
+        cnt = QLabel(str(cnt_tasks))
+        cnt.setStyleSheet(
+            f"color:#404040;font-family:'{FONT}';font-size:10px;"
+            f"background:{t['card']};border-radius:10px;padding:1px 6px;")
+        lay.addWidget(cnt)
+
+        ghost.setStyleSheet(
+            f"QWidget{{background:{t['card']};border:1.5px solid {cat['color']};"
+            f"border-radius:7px;}}")
+        ghost.setFixedWidth(self.list_container.width())
+        ghost.adjustSize()
+        return ghost
+
+    def _cat_drag_start(self, cat_id: str, gpos: QPoint):
+        self._dragging_cat_id    = cat_id
+        self._cat_drag_insert_at = None
+        self._cat_ghost = self._make_cat_ghost(cat_id)
+        if self._cat_ghost:
+            self._cat_ghost.move(gpos.x() + 12,
+                                  gpos.y() - self._cat_ghost.height() // 2)
+            self._cat_ghost.show()
+        self._cat_drag_filter = CatDragFilter(self)
+        QApplication.instance().installEventFilter(self._cat_drag_filter)
+
+    def _cat_drag_update(self, gpos: QPoint):
+        if self._dragging_cat_id is None: return
+        if self._cat_ghost:
+            self._cat_ghost.move(gpos.x() + 12,
+                                  gpos.y() - self._cat_ghost.height() // 2)
+        ins = self._calc_cat_insert_idx(gpos)
+        if ins == self._cat_drag_insert_at: return
+        self._cat_drag_insert_at = ins
+        for i, g in enumerate(self._cat_groups):
+            g._cat_drag_above = (i == ins); g.update()
+
+    def _cat_drag_end(self, gpos: QPoint):
+        if self._dragging_cat_id is None: return
+        if self._cat_ghost:
+            self._cat_ghost.close(); self._cat_ghost.deleteLater()
+            self._cat_ghost = None
+        ins = self._calc_cat_insert_idx(gpos)
+        cats = self.data.get("categories", [])
+        from_idx = next((i for i, c in enumerate(cats)
+                         if c["id"] == self._dragging_cat_id), None)
+        if from_idx is not None and from_idx != ins:
+            cat = cats.pop(from_idx)
+            to_idx = ins if ins <= from_idx else ins - 1
+            cats.insert(to_idx, cat)
+            self.data["categories"] = cats
+            save_data(self.data)
+        for g in self._cat_groups:
+            g._cat_drag_above = False; g.update()
+        self._dragging_cat_id = None; self._cat_drag_insert_at = None
+        self._cat_drag_filter = None
+        self.render_todos()
+
+    def _calc_cat_insert_idx(self, gpos: QPoint) -> int:
+        gs = self._cat_groups
+        if not gs: return 0
+        for i, g in enumerate(gs):
+            top = g.mapToGlobal(g.rect().topLeft()).y()
+            bot = g.mapToGlobal(g.rect().bottomLeft()).y()
+            if gpos.y() < (top + bot) // 2: return i
+        return len(gs)
 
     def _cat_at_gpos(self, gpos: QPoint) -> str | None:
         """마우스 위치가 속한 카테고리 그룹 ID 반환 (아이템이 없는 그룹 처리용)"""
