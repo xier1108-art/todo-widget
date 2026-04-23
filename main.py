@@ -19,7 +19,7 @@ from PyQt6.QtGui import (
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.4.0"
+APP_VER    = "5.4.1"
 FONT       = "Noto Sans KR"
 SHADOW_PAD = 0
 RADIUS     = 12
@@ -736,20 +736,22 @@ class CategoryGroupWidget(QWidget):
         self._cat_drag_hdl.setCursor(Qt.CursorShape.SizeVerCursor)
         def _on_cat_drag_press(e):
             if e.button() == Qt.MouseButton.LeftButton:
+                e.accept()  # 헤더로 이벤트 전파 차단
                 self.sig_cat_drag_start.emit(self.cat["id"],
                                              e.globalPosition().toPoint())
         self._cat_drag_hdl.mousePressEvent = _on_cat_drag_press
         hl.insertWidget(0, self._cat_drag_hdl)
 
-        def _hdr_mouse_press(e):
-            # 핸들 영역이 아닐 때만 접기/펼치기
-            if not self._cat_drag_hdl.geometry().contains(e.pos()):
-                self.sig_toggle_cat.emit(self.cat["id"])
-        self._hdr.mousePressEvent = _hdr_mouse_press
-        self._hdr.enterEvent  = lambda _: (self._action_wrap.setVisible(True),
-                                            self._cat_drag_hdl.setVisible(True))
-        self._hdr.leaveEvent  = lambda _: (self._action_wrap.setVisible(False),
-                                            self._cat_drag_hdl.setVisible(False))
+        # 헤더는 항상 toggle (핸들이 e.accept()로 전파를 막음)
+        self._hdr.mousePressEvent = lambda _: self.sig_toggle_cat.emit(self.cat["id"])
+        def _hdr_enter(_):
+            self._action_wrap.setVisible(True)
+            self._cat_drag_hdl.setVisible(True)
+        def _hdr_leave(_):
+            self._action_wrap.setVisible(False)
+            self._cat_drag_hdl.setVisible(False)
+        self._hdr.enterEvent = _hdr_enter
+        self._hdr.leaveEvent = _hdr_leave
         root.addWidget(self._hdr)
 
         # 구분선
@@ -1505,17 +1507,20 @@ class TodoWidget(QMainWindow):
         cats = self.data.get("categories", [])
         from_idx = next((i for i, c in enumerate(cats)
                          if c["id"] == self._dragging_cat_id), None)
+        changed = False
         if from_idx is not None and from_idx != ins:
             cat = cats.pop(from_idx)
             to_idx = ins if ins <= from_idx else ins - 1
             cats.insert(to_idx, cat)
             self.data["categories"] = cats
             save_data(self.data)
+            changed = True
         for g in self._cat_groups:
             g._cat_drag_above = False; g.update()
         self._dragging_cat_id = None; self._cat_drag_insert_at = None
         self._cat_drag_filter = None
-        self.render_todos()
+        if changed:
+            self.render_todos()
 
     def _calc_cat_insert_idx(self, gpos: QPoint) -> int:
         gs = self._cat_groups
