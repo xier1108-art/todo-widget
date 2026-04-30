@@ -20,7 +20,7 @@ from PyQt6.QtGui import (
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.5.0"
+APP_VER    = "5.5.1"
 FONT       = "Noto Sans KR"
 SHADOW_PAD = 0
 RADIUS     = 12
@@ -45,10 +45,11 @@ HIGHLIGHT_COLORS = [
 ]
 
 def hex_to_rgba(hex_color: str, alpha: float) -> str:
-    """#rrggbb → rgba(r,g,b,alpha)"""
+    """#rrggbb + alpha(0-1) → rgba(r,g,b,a) Qt 스타일시트는 0-255 정수가 더 안정적"""
     h = hex_color.lstrip('#')
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return f"rgba({r},{g},{b},{alpha})"
+    a = max(0, min(255, int(alpha * 255)))
+    return f"rgba({r},{g},{b},{a})"
 
 # ── 기본 카테고리 ───────────────────────────────────────────────────────────────
 DEFAULT_CATS = [
@@ -734,6 +735,7 @@ class TodoItemWidget(QWidget):
         self._editing  = False
         self._drag_above = False
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setObjectName("todoItem")
         self._build()
 
@@ -896,11 +898,15 @@ class TodoItemWidget(QWidget):
     def _style(self, hovered: bool):
         hl = self.item.get("highlight") or ""
         if hl:
-            bg = hex_to_rgba(hl, 0.15 if hovered else 0.08)
+            bg = hex_to_rgba(hl, 0.32 if hovered else 0.22)
+            border = hex_to_rgba(hl, 0.55)
+            self.setStyleSheet(
+                f"QWidget#todoItem{{background:{bg};border-radius:7px;"
+                f"border-left:3px solid {border};}}")
         else:
-            bg = "rgba(255,255,255,0.03)" if hovered else "transparent"
-        self.setStyleSheet(
-            f"QWidget#todoItem{{background:{bg};border-radius:7px;}}")
+            bg = "rgba(255,255,255,8)" if hovered else "transparent"
+            self.setStyleSheet(
+                f"QWidget#todoItem{{background:{bg};border-radius:7px;}}")
 
     def enterEvent(self, e):
         self._style(True)
