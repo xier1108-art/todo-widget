@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QLineEdit, QScrollArea, QFrame,
     QSystemTrayIcon, QMenu, QGraphicsDropShadowEffect, QSizePolicy,
     QSizeGrip, QFileDialog, QMessageBox, QDialog, QComboBox, QGridLayout,
+    QPlainTextEdit,
 )
 from PyQt6.QtCore import Qt, QPoint, QPointF, QEvent, QObject, pyqtSignal
 from PyQt6.QtGui import (
@@ -19,7 +20,7 @@ from PyQt6.QtGui import (
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.4.1"
+APP_VER    = "5.5.0"
 FONT       = "Noto Sans KR"
 SHADOW_PAD = 0
 RADIUS     = 12
@@ -36,6 +37,18 @@ COLOR_SWATCHES = [
     '#52c2b4','#528be0','#8b52e0','#c252b4','#8b5cf6',
     '#3b9e7a','#5a7fa8','#a3844a','#c2526a','#6b7280',
 ]
+
+# ── 강조 색상 (할일 행 하이라이트용) ────────────────────────────────────────────
+HIGHLIGHT_COLORS = [
+    "#ef4444","#f97316","#eab308","#22c55e",
+    "#3b82f6","#8b5cf6","#ec4899","#06b6d4",
+]
+
+def hex_to_rgba(hex_color: str, alpha: float) -> str:
+    """#rrggbb → rgba(r,g,b,alpha)"""
+    h = hex_color.lstrip('#')
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
 
 # ── 기본 카테고리 ───────────────────────────────────────────────────────────────
 DEFAULT_CATS = [
@@ -469,12 +482,247 @@ class CatDragFilter(QObject):
         return False
 
 
+# ── 강조 색상 팝업 ────────────────────────────────────────────────────────────
+class HighlightPopup(QWidget):
+    sig_select = pyqtSignal(str)  # "" = 없음
+
+    def __init__(self, theme: dict, current: str, parent=None):
+        super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        t = theme
+        self.setStyleSheet(
+            f"QWidget{{background:{t['card']};border:1px solid {t['border2']};"
+            f"border-radius:10px;}}")
+
+        il = QVBoxLayout(self)
+        il.setContentsMargins(10, 8, 10, 10); il.setSpacing(6)
+
+        lbl = QLabel("강조 색상")
+        lbl.setStyleSheet(
+            f"color:{t['muted']};font-family:'{FONT}';font-size:10px;background:transparent;")
+        il.addWidget(lbl)
+
+        row = QHBoxLayout(); row.setSpacing(5)
+
+        # "없음" 버튼
+        none_btn = QPushButton("✕"); none_btn.setFixedSize(22, 22)
+        none_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sel = not current
+        none_btn.setStyleSheet(
+            f"QPushButton{{background:{t['border']};color:{t['muted']};"
+            f"border-radius:11px;border:2.5px solid {'white' if sel else 'transparent'};"
+            f"font-size:9px;}}"
+            f"QPushButton:hover{{border-color:rgba(255,255,255,0.5);}}")
+        none_btn.clicked.connect(lambda: (self.sig_select.emit(""), self.close()))
+        row.addWidget(none_btn)
+
+        for c in HIGHLIGHT_COLORS:
+            btn = QPushButton(); btn.setFixedSize(22, 22)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            sel = current == c
+            btn.setStyleSheet(
+                f"QPushButton{{background:{c};border-radius:11px;"
+                f"border:2.5px solid {'white' if sel else 'transparent'};}}"
+                f"QPushButton:hover{{border-color:rgba(255,255,255,0.6);}}")
+            btn.clicked.connect(lambda _, col=c: (self.sig_select.emit(col), self.close()))
+            row.addWidget(btn)
+
+        il.addLayout(row)
+        self.adjustSize()
+
+
+# ── 할일 세부내용 다이얼로그 ──────────────────────────────────────────────────
+class TodoDetailDialog(QDialog):
+    def __init__(self, item: dict, cat: dict, theme: dict,
+                 font_size: int, parent=None):
+        super().__init__(parent,
+                         Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.item = item
+        self.t = t = theme
+        self._drag_pos = None
+
+        outer = QWidget(); outer.setObjectName("detailOuter")
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(40); shadow.setOffset(0, 8)
+        shadow.setColor(QColor(0, 0, 0, 180))
+        outer.setGraphicsEffect(shadow)
+        outer.setStyleSheet(
+            f"QWidget#detailOuter{{background:{t['bg']};border-radius:14px;"
+            f"border:1px solid {t['border2']};}}")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.addWidget(outer)
+
+        il = QVBoxLayout(outer)
+        il.setContentsMargins(0, 0, 0, 0); il.setSpacing(0)
+
+        # ── 다이얼로그 헤더 (드래그 이동) ────────────────────────────────
+        hdr = QWidget(); hdr.setObjectName("detailHdr")
+        hdr.setCursor(Qt.CursorShape.SizeAllCursor)
+        hdr.setStyleSheet(
+            f"QWidget#detailHdr{{background:{t['header']};"
+            f"border-radius:14px 14px 0 0;}}")
+        hl = QHBoxLayout(hdr); hl.setContentsMargins(16, 12, 14, 12); hl.setSpacing(10)
+
+        cat_bar = QWidget(); cat_bar.setFixedSize(3, 26)
+        cat_bar.setStyleSheet(f"background:{cat['color']};border-radius:2px;")
+        hl.addWidget(cat_bar)
+
+        self.title_edit = QLineEdit(item["text"])
+        self.title_edit.setStyleSheet(
+            f"QLineEdit{{background:transparent;border:none;color:{t['fg']};"
+            f"font-family:'{FONT}';font-size:{font_size + 1}px;font-weight:600;}}")
+        hl.addWidget(self.title_edit, 1)
+
+        close_btn = QPushButton("×"); close_btn.setFixedSize(24, 24)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            f"QPushButton{{color:{t['muted']};background:transparent;"
+            f"border:none;font-size:16px;border-radius:5px;}}"
+            f"QPushButton:hover{{background:rgba(239,68,68,0.1);color:#ef4444;}}")
+        close_btn.clicked.connect(self._save_and_close)
+        hl.addWidget(close_btn)
+
+        hdr.mousePressEvent   = self._hdr_press
+        hdr.mouseMoveEvent    = self._hdr_move
+        hdr.mouseReleaseEvent = lambda _: setattr(self, '_drag_pos', None)
+        il.addWidget(hdr)
+
+        # ── 컨텐츠 ────────────────────────────────────────────────────────
+        body = QWidget()
+        body.setStyleSheet("background:transparent;")
+        bl = QVBoxLayout(body); bl.setContentsMargins(18, 14, 18, 18); bl.setSpacing(10)
+
+        # 메타 정보
+        created = item.get("created_date", "")
+        try:
+            days = (date.today() - date.fromisoformat(created)).days
+            age = "오늘" if days == 0 else ("어제" if days == 1 else f"{days}일 전")
+        except Exception:
+            age = ""
+        meta_lbl = QLabel(f"{created}  •  {cat['label']}"
+                          + (f"  •  {age}" if age else ""))
+        meta_lbl.setStyleSheet(
+            f"color:{t['muted']};font-family:'{FONT}';font-size:11px;background:transparent;")
+        bl.addWidget(meta_lbl)
+
+        # 강조 색상 선택 행
+        hl_row = QHBoxLayout(); hl_row.setSpacing(5)
+        hl_lbl = QLabel("강조")
+        hl_lbl.setStyleSheet(
+            f"color:{t['muted']};font-family:'{FONT}';font-size:10px;background:transparent;")
+        hl_row.addWidget(hl_lbl)
+
+        cur_hl = item.get("highlight") or ""
+        none_hl = QPushButton("✕"); none_hl.setFixedSize(18, 18)
+        none_hl.setCursor(Qt.CursorShape.PointingHandCursor)
+        none_hl.clicked.connect(lambda: self._pick_hl(""))
+        self._hl_btns: dict[str, QPushButton] = {"": none_hl}
+        hl_row.addWidget(none_hl)
+
+        for c in HIGHLIGHT_COLORS:
+            b = QPushButton(); b.setFixedSize(18, 18)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _, col=c: self._pick_hl(col))
+            self._hl_btns[c] = b
+            hl_row.addWidget(b)
+        hl_row.addStretch()
+        bl.addLayout(hl_row)
+        self._refresh_hl_btns(cur_hl)
+
+        # 구분선
+        sep = QWidget(); sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background:{t['border']};")
+        bl.addWidget(sep)
+
+        # 메모
+        notes_lbl = QLabel("메모")
+        notes_lbl.setStyleSheet(
+            f"color:{t['muted']};font-family:'{FONT}';font-size:11px;background:transparent;")
+        bl.addWidget(notes_lbl)
+
+        self.notes_edit = QPlainTextEdit(item.get("notes", ""))
+        self.notes_edit.setPlaceholderText("세부 내용을 입력하세요...")
+        self.notes_edit.setMinimumHeight(140)
+        self.notes_edit.setStyleSheet(
+            f"QPlainTextEdit{{background:{t['input_bg']};color:{t['fg']};"
+            f"border:1px solid {t['border2']};border-radius:8px;"
+            f"padding:10px;font-family:'{FONT}';font-size:{font_size}px;}}"
+            f"QPlainTextEdit:focus{{border-color:{t['accent']};}}")
+        bl.addWidget(self.notes_edit)
+
+        # 저장 버튼
+        btn_row = QHBoxLayout(); btn_row.addStretch()
+        save_btn = QPushButton("저장")
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setStyleSheet(
+            f"QPushButton{{background:{t['accent']};color:white;"
+            f"border:none;border-radius:7px;padding:7px 22px;"
+            f"font-family:'{FONT}';font-size:12px;}}"
+            f"QPushButton:hover{{background:{t['accent_h']};}}")
+        save_btn.clicked.connect(self._save_and_close)
+        btn_row.addWidget(save_btn)
+        bl.addLayout(btn_row)
+
+        il.addWidget(body)
+        self.setMinimumWidth(430)
+        self.title_edit.returnPressed.connect(self.notes_edit.setFocus)
+
+    def _pick_hl(self, color: str):
+        self.item["highlight"] = color if color else None
+        self._refresh_hl_btns(color)
+
+    def _refresh_hl_btns(self, selected: str):
+        t = self.t
+        none_btn = self._hl_btns[""]
+        sel = not selected
+        none_btn.setStyleSheet(
+            f"QPushButton{{background:{t['border']};color:{t['muted']};"
+            f"border-radius:9px;border:2px solid {'white' if sel else 'transparent'};"
+            f"font-size:8px;}}"
+            f"QPushButton:hover{{border-color:rgba(255,255,255,0.5);}}")
+        for c in HIGHLIGHT_COLORS:
+            btn = self._hl_btns[c]
+            s = selected == c
+            btn.setStyleSheet(
+                f"QPushButton{{background:{c};border-radius:9px;"
+                f"border:2px solid {'white' if s else 'transparent'};}}"
+                f"QPushButton:hover{{border-color:rgba(255,255,255,0.6);}}")
+
+    def _hdr_press(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def _hdr_move(self, e):
+        if e.buttons() == Qt.MouseButton.LeftButton and self._drag_pos:
+            self.move(e.globalPosition().toPoint() - self._drag_pos)
+
+    def _save_and_close(self):
+        self.item["notes"] = self.notes_edit.toPlainText()
+        title = self.title_edit.text().strip()
+        if title and title != self.item["text"]:
+            self.item["text"] = title
+        self.accept()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape:
+            self._save_and_close()
+        elif (e.modifiers() == Qt.KeyboardModifier.ControlModifier
+              and e.key() == Qt.Key.Key_Return):
+            self._save_and_close()
+        else:
+            super().keyPressEvent(e)
+
+
 # ── 할일 아이템 위젯 ────────────────────────────────────────────────────────────
 class TodoItemWidget(QWidget):
-    sig_toggle     = pyqtSignal(int)
-    sig_delete     = pyqtSignal(int)
-    sig_edit       = pyqtSignal(int, str)
-    sig_drag_start = pyqtSignal(int, QPoint)
+    sig_toggle       = pyqtSignal(int)
+    sig_delete       = pyqtSignal(int)
+    sig_edit         = pyqtSignal(int, str)
+    sig_drag_start   = pyqtSignal(int, QPoint)
+    sig_open_detail  = pyqtSignal(int)
+    sig_set_highlight = pyqtSignal(int, str)
 
     def __init__(self, item: dict, cat: dict, theme: dict,
                  font_size: int = 13, parent=None):
@@ -520,24 +768,45 @@ class TodoItemWidget(QWidget):
         root.addWidget(self.check)
         root.addSpacing(9)
 
-        # 텍스트 영역
+        # 텍스트 영역 (클릭 → 세부내용)
         self._text_wrap = QWidget()
         self._text_wrap.setSizePolicy(QSizePolicy.Policy.Expanding,
                                        QSizePolicy.Policy.Preferred)
         self._text_wrap.setStyleSheet("background:transparent;")
         tl = QHBoxLayout(self._text_wrap)
-        tl.setContentsMargins(0, 8, 0, 8); tl.setSpacing(0)
+        tl.setContentsMargins(0, 8, 0, 8); tl.setSpacing(4)
         self.text_lbl = QLabel(self.item["text"])
         self.text_lbl.setWordWrap(True)
+        self.text_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
         self.text_lbl.setStyleSheet(
             f"color:{'#383838' if done else t['fg']};"
             f"font-family:'{FONT}';font-size:{self.font_size}px;"
             f"text-decoration:{'line-through' if done else 'none'};"
             f"background:transparent;line-height:150%;")
+        def _text_press(e):
+            if e.button() == Qt.MouseButton.LeftButton and not self._editing:
+                e.accept()
+                self.sig_open_detail.emit(self.item["id"])
+        self.text_lbl.mousePressEvent = _text_press
         tl.addWidget(self.text_lbl)
+        # 메모 있음 표시 (항상 표시)
+        if self.item.get("notes"):
+            dot = QLabel("●"); dot.setFixedSize(8, 14)
+            dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            dot.setStyleSheet(
+                f"color:{t['accent']};font-size:6px;background:transparent;")
+            tl.addWidget(dot)
         root.addWidget(self._text_wrap, 1)
 
         # 호버 액션 버튼
+        self.hl_btn = self._ghost_btn("⬤", danger=False)  # 강조 색상 버튼
+        self.hl_btn.setVisible(False)
+        hl_color = self.item.get("highlight") or ""
+        if hl_color:
+            self.hl_btn.setStyleSheet(
+                self.hl_btn.styleSheet().replace(f"color:{t['muted']}", f"color:{hl_color}"))
+        self.hl_btn.clicked.connect(self._show_hl_popup)
+
         self.edit_btn = self._ghost_btn("✎", danger=False)
         self.edit_btn.setVisible(False)
         self.edit_btn.clicked.connect(self._start_edit)
@@ -549,6 +818,7 @@ class TodoItemWidget(QWidget):
         action_wrap = QWidget(); action_wrap.setStyleSheet("background:transparent;")
         al = QHBoxLayout(action_wrap)
         al.setContentsMargins(0, 0, 6, 0); al.setSpacing(2)
+        al.addWidget(self.hl_btn)
         if not done:
             al.addWidget(self.edit_btn)
         al.addWidget(self.del_btn)
@@ -569,6 +839,15 @@ class TodoItemWidget(QWidget):
             f"border-radius:5px;}}"
             f"QPushButton:hover{{background:{hover_bg};color:{hover_fg};}}")
         return btn
+
+    def _show_hl_popup(self):
+        cur = self.item.get("highlight") or ""
+        popup = HighlightPopup(self.t, cur)
+        popup.sig_select.connect(
+            lambda c: self.sig_set_highlight.emit(self.item["id"], c))
+        pos = self.hl_btn.mapToGlobal(QPoint(0, self.hl_btn.height() + 2))
+        popup.move(pos)
+        popup.show()
 
     def _on_drag_press(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -615,16 +894,18 @@ class TodoItemWidget(QWidget):
 
     # ── 스타일 ───────────────────────────────────────────────────────────────
     def _style(self, hovered: bool):
-        if hovered:
-            self.setStyleSheet(
-                "QWidget#todoItem{background:rgba(255,255,255,0.03);"
-                "border-radius:7px;}")
+        hl = self.item.get("highlight") or ""
+        if hl:
+            bg = hex_to_rgba(hl, 0.15 if hovered else 0.08)
         else:
-            self.setStyleSheet("QWidget#todoItem{background:transparent;}")
+            bg = "rgba(255,255,255,0.03)" if hovered else "transparent"
+        self.setStyleSheet(
+            f"QWidget#todoItem{{background:{bg};border-radius:7px;}}")
 
     def enterEvent(self, e):
         self._style(True)
         self.drag_handle.setVisible(True)
+        self.hl_btn.setVisible(True)
         self.edit_btn.setVisible(not self.item.get("done", False))
         self.del_btn.setVisible(True)
         super().enterEvent(e)
@@ -633,6 +914,7 @@ class TodoItemWidget(QWidget):
         self._style(False)
         if not self._editing:
             self.drag_handle.setVisible(False)
+            self.hl_btn.setVisible(False)
             self.edit_btn.setVisible(False)
             self.del_btn.setVisible(False)
         super().leaveEvent(e)
@@ -658,11 +940,13 @@ class CategoryGroupWidget(QWidget):
     sig_toggle_cat    = pyqtSignal(str)          # cat_id
     sig_edit_cat      = pyqtSignal(str)          # cat_id
     sig_delete_cat    = pyqtSignal(str)          # cat_id
-    sig_toggle_task   = pyqtSignal(int)
-    sig_delete_task   = pyqtSignal(int)
-    sig_edit_task     = pyqtSignal(int, str)
-    sig_drag_start    = pyqtSignal(int, QPoint)  # task_id, global_pos
-    sig_cat_drag_start = pyqtSignal(str, QPoint) # cat_id, global_pos
+    sig_toggle_task    = pyqtSignal(int)
+    sig_delete_task    = pyqtSignal(int)
+    sig_edit_task      = pyqtSignal(int, str)
+    sig_drag_start     = pyqtSignal(int, QPoint)  # task_id, global_pos
+    sig_cat_drag_start = pyqtSignal(str, QPoint)  # cat_id, global_pos
+    sig_open_detail    = pyqtSignal(int)
+    sig_set_highlight  = pyqtSignal(int, str)
 
     def __init__(self, cat: dict, tasks: list, theme: dict,
                  collapsed: bool, font_size: int = 13, parent=None):
@@ -777,6 +1061,8 @@ class CategoryGroupWidget(QWidget):
                 w.sig_delete.connect(self.sig_delete_task)
                 w.sig_edit.connect(self.sig_edit_task)
                 w.sig_drag_start.connect(self.sig_drag_start)
+                w.sig_open_detail.connect(self.sig_open_detail)
+                w.sig_set_highlight.connect(self.sig_set_highlight)
                 cl.addWidget(w)
                 self._item_widgets.append(w)
 
@@ -1179,6 +1465,8 @@ class TodoWidget(QMainWindow):
             g.sig_edit_task.connect(self.edit_item)
             g.sig_drag_start.connect(self._drag_start)
             g.sig_cat_drag_start.connect(self._cat_drag_start)
+            g.sig_open_detail.connect(self._open_detail)
+            g.sig_set_highlight.connect(self._set_highlight)
             self._list_lay.addWidget(g)
             self._cat_groups.append(g)
 
@@ -1237,6 +1525,34 @@ class TodoWidget(QMainWindow):
     def clear_done(self):
         self.data["todos"] = [x for x in self.data.get("todos", [])
                                if not x.get("done")]
+        save_data(self.data); self.render_todos()
+
+    # ── 세부내용 / 강조 색상 ───────────────────────────────────────────────────
+    def _open_detail(self, item_id: int):
+        item = next((x for x in self.data.get("todos", [])
+                     if x["id"] == item_id), None)
+        if not item: return
+        cat = next((c for c in self.data.get("categories", [])
+                    if c["id"] == item.get("cat")),
+                   {"label": "기타", "color": "#888888"})
+        t  = THEMES.get(self.data.get("theme", "midnight"), THEMES["midnight"])
+        fs = self.data.get("font_size", 13)
+        dlg = TodoDetailDialog(item, cat, t, fs, parent=self)
+        dlg.adjustSize()
+        dlg.move(
+            self.x() + (self.width()  - dlg.width())  // 2,
+            self.y() + (self.height() - dlg.height()) // 2,
+        )
+        dlg.exec()
+        # item dict이 in-place로 수정됐으므로 바로 저장
+        save_data(self.data)
+        self.render_todos()
+
+    def _set_highlight(self, item_id: int, color: str):
+        for td in self.data.get("todos", []):
+            if td["id"] == item_id:
+                td["highlight"] = color if color else None
+                break
         save_data(self.data); self.render_todos()
 
     # ── 카테고리 CRUD ─────────────────────────────────────────────────────────
