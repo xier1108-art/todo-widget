@@ -13,17 +13,18 @@ from PyQt6.QtWidgets import (
     QSizeGrip, QFileDialog, QMessageBox, QDialog, QComboBox, QGridLayout,
     QPlainTextEdit,
 )
-from PyQt6.QtCore import Qt, QPoint, QPointF, QEvent, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QPointF, QEvent, QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QColor, QFont, QFontDatabase, QIcon, QPixmap, QPainter, QPen, QAction, QPalette,
 )
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 APP_NAME   = "할일위젯"
-APP_VER    = "5.5.1"
+APP_VER    = "5.6.0"
 FONT       = "Noto Sans KR"
 SHADOW_PAD = 0
 RADIUS     = 12
+MEMO_W     = 260   # 오른쪽 메모 패널 너비
 
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).parent
@@ -1157,6 +1158,17 @@ class TodoWidget(QMainWindow):
 
         self._hdr = self._make_header(); il.addWidget(self._hdr)
 
+        # 본문: [할일 목록 + 푸터] | [메모 패널]
+        body = QWidget(); body.setStyleSheet("background:transparent;")
+        bl = QHBoxLayout(body); bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(0)
+        left = QWidget(); left.setStyleSheet("background:transparent;")
+        ll = QVBoxLayout(left); ll.setContentsMargins(0, 0, 0, 0); ll.setSpacing(0)
+        bl.addWidget(left, 1)
+        self.memo_panel = self._make_memo_panel()
+        self.memo_panel.setVisible(self.data.get("memo_open", False))
+        bl.addWidget(self.memo_panel)
+        il.addWidget(body, 1)
+
         self.scroll = QScrollArea(); self.scroll.setObjectName("scrollArea")
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -1166,10 +1178,88 @@ class TodoWidget(QMainWindow):
         self._list_lay.setContentsMargins(0, 4, 0, 4); self._list_lay.setSpacing(0)
         self._list_lay.addStretch()
         self.scroll.setWidget(self.list_container)
-        il.addWidget(self.scroll, 1)
+        ll.addWidget(self.scroll, 1)
 
-        self._footer = self._make_footer(); il.addWidget(self._footer)
+        self._footer = self._make_footer(); ll.addWidget(self._footer)
         self._grip = QSizeGrip(self); self._grip.setFixedSize(16, 16)
+
+    def _make_memo_panel(self):
+        panel = QWidget(); panel.setObjectName("memoPanel")
+        panel.setFixedWidth(MEMO_W)
+        pl = QVBoxLayout(panel); pl.setContentsMargins(12, 10, 12, 12); pl.setSpacing(8)
+
+        top = QHBoxLayout(); top.setSpacing(6)
+        self.memo_title = QLabel("메모")
+        self.memo_status = QLabel("")
+        top.addWidget(self.memo_title); top.addStretch(); top.addWidget(self.memo_status)
+        pl.addLayout(top)
+
+        self.memo_edit = QPlainTextEdit(self.data.get("memo", ""))
+        self.memo_edit.setPlaceholderText("간단한 메모를 적어두세요...")
+        pl.addWidget(self.memo_edit, 1)
+
+        # 입력이 멈추고 0.6초 뒤 자동 저장
+        self._memo_timer = QTimer(self)
+        self._memo_timer.setSingleShot(True); self._memo_timer.setInterval(600)
+        self._memo_timer.timeout.connect(self._save_memo)
+        self.memo_edit.textChanged.connect(self._on_memo_changed)
+        return panel
+
+    def _on_memo_changed(self):
+        self.memo_status.setText("입력 중...")
+        self._memo_timer.start()
+
+    def _save_memo(self):
+        self.data["memo"] = self.memo_edit.toPlainText()
+        save_data(self.data)
+        self.memo_status.setText("저장됨")
+
+    def toggle_memo(self):
+        show = not self.data.get("memo_open", False)
+        self.data["memo_open"] = show
+        self.memo_panel.setVisible(show)
+        # 패널 너비만큼 창을 늘리거나 줄임 (화면 오른쪽 밖으로 나가지 않게)
+        w = self.width() + (MEMO_W if show else -MEMO_W)
+        sc = QApplication.primaryScreen().availableGeometry()
+        x = min(self.x(), sc.right() - w) if show else self.x()
+        self.setGeometry(max(sc.left(), x), self.y(), w, self.height())
+        self._apply_memo_style(THEMES.get(self.data.get("theme", "midnight"),
+                                          THEMES["midnight"]))
+        if show: self.memo_edit.setFocus()
+        save_data(self.data)
+
+    def _apply_memo_style(self, t: dict):
+        open_ = self.data.get("memo_open", False)
+        # 메모가 열려 있으면 푸터의 오른쪽 아래 모서리는 각지게
+        self._footer.setStyleSheet(
+            f"QWidget#footer{{background:{t['header']};"
+            f"border-top:1px solid {t['border']};"
+            f"border-bottom-left-radius:{RADIUS}px;"
+            f"border-bottom-right-radius:{0 if open_ else RADIUS}px;}}")
+        self.memo_panel.setStyleSheet(
+            f"QWidget#memoPanel{{background:{t['header']};"
+            f"border-left:1px solid {t['border']};"
+            f"border-bottom-right-radius:{RADIUS}px;}}")
+        self.memo_title.setStyleSheet(
+            f"color:{t['fg']};font-family:'{FONT}';font-size:12px;"
+            f"font-weight:bold;background:transparent;")
+        self.memo_status.setStyleSheet(
+            f"color:{t['muted']};font-family:'{FONT}';font-size:10px;background:transparent;")
+        self.memo_edit.setStyleSheet(
+            f"QPlainTextEdit{{background:{t['input_bg']};color:{t['fg']};"
+            f"border:1px solid {t['border2']};border-radius:8px;padding:8px;"
+            f"font-family:'{FONT}';font-size:{self.data.get('font_size', 13)}px;}}"
+            f"QPlainTextEdit:focus{{border-color:{t['accent']};}}"
+            f"QScrollBar:vertical{{background:transparent;width:4px;margin:0;}}"
+            f"QScrollBar::handle:vertical{{background:{t['border']};"
+            f"border-radius:2px;min-height:20px;}}"
+            f"QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{{height:0;}}")
+        self.memo_btn.setStyleSheet(
+            f"QPushButton{{color:{t['accent'] if open_ else t['muted']};"
+            f"background:{t['card'] if open_ else 'transparent'};"
+            f"border:1px solid {t['border2']};border-radius:5px;padding:2px 8px;"
+            f"font-family:'{FONT}';font-size:11px;}}"
+            f"QPushButton:hover{{color:{t['fg']};background:{t['card']};}}")
 
     def _make_header(self):
         hdr = QWidget(); hdr.setObjectName("header"); hdr.setFixedHeight(44)
@@ -1190,7 +1280,13 @@ class TodoWidget(QMainWindow):
         d = date.today()
         day_s = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][d.weekday()]
         date_lbl = QLabel(d.strftime(f"%b %d  {day_s}")); date_lbl.setObjectName("hdrDate")
-        lay.addWidget(date_lbl); lay.addSpacing(12)
+        lay.addWidget(date_lbl); lay.addSpacing(10)
+
+        # 오른쪽 메모 패널 토글
+        self.memo_btn = QPushButton("메모")
+        self.memo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.memo_btn.clicked.connect(self.toggle_memo)
+        lay.addWidget(self.memo_btn); lay.addSpacing(12)
 
         # macOS 스타일 윈도우 버튼
         min_btn = QPushButton(); min_btn.setFixedSize(11, 11)
@@ -1387,10 +1483,7 @@ class TodoWidget(QMainWindow):
         self.list_container.setStyleSheet(
             f"QWidget#listContainer{{background:{t['bg']};}}")
 
-        self._footer.setStyleSheet(
-            f"QWidget#footer{{background:{t['header']};"
-            f"border-top:1px solid {t['border']};"
-            f"border-radius:0 0 {RADIUS}px {RADIUS}px;}}")
+        self._apply_memo_style(t)
         self.prog_text.setStyleSheet(
             f"color:{t['muted']};font-family:'{FONT}';font-size:11px;"
             f"background:transparent;")
@@ -1911,6 +2004,8 @@ class TodoWidget(QMainWindow):
     def set_font_size(self, pt: int):
         self.data["font_size"] = pt
         save_data(self.data); self._rebuild_tray_menu(); self.render_todos()
+        self._apply_memo_style(THEMES.get(self.data.get("theme", "midnight"),
+                                          THEMES["midnight"]))
 
     def toggle_startup(self):
         su = not self.data.get("startup", False)
@@ -1942,11 +2037,17 @@ class TodoWidget(QMainWindow):
         backup_data(self.data)
         new_data["window"] = self.data["window"]
         self.data = new_data; save_data(self.data)
+        self.memo_edit.blockSignals(True)
+        self.memo_edit.setPlainText(self.data.get("memo", ""))
+        self.memo_edit.blockSignals(False)
+        self.memo_panel.setVisible(self.data.get("memo_open", False))
         self._refresh_cat_select()
         self.apply_theme(self.data.get("theme", "midnight"), first_run=True)
         self.render_todos()
 
     def quit_app(self):
+        if self._memo_timer.isActive():
+            self._memo_timer.stop(); self.data["memo"] = self.memo_edit.toPlainText()
         save_data(self.data); self.tray.hide()
         QApplication.instance().quit()
 
